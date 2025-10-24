@@ -2,7 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
-import { redisClient } from './config/redis.config.js';
+import { client as redisClient } from './config/redis.config.js';
+import logger from './utils/logger.utils.js';
 
 const app = express()
 

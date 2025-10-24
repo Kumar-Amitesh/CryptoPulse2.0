@@ -1,5 +1,9 @@
 import { createClient } from 'redis'
 import logger from '../utils/logger.utils.js'
+import dotenv from 'dotenv'
+dotenv.config({ 
+    path: '../../.env'
+})
 
 const client = createClient({
     username: process.env.REDIS_USERNAME,

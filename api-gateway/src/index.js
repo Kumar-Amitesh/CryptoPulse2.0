@@ -2,7 +2,8 @@ import app from './app.js';
 import dotenv from 'dotenv';
 import connectDB from './config/db.config.js';
 import logger from './utils/logger.utils.js';
-import { client as redisClient } from './config/redis.config.js';
+// import { client as redisClient } from './config/redis.config.js';
+import mongoose from 'mongoose';
 
 dotenv.config({
     path:'../../.env'
@@ -45,8 +46,8 @@ const shutdown = async (signal) => {
         logger.info('MongoDB connection closed.');
         console.log('MongoDB connection closed.');
         // Close Redis Connection
-        await redisClient.quit();
-        logger.info('Redis connection closed.');
+        // await redisClient.quit();
+        // logger.info('Redis connection closed.');
         process.exit(0); 
       } catch (err) {
         logger.error('Error during shutdown:', err);

@@ -40,12 +40,14 @@ const authServiceProxy = createProxyMiddleware({
 const dataServiceProxy = createProxyMiddleware({
     target: DATA_SERVICE_URL,
     changeOrigin: true,
+    logLevel: 'debug',
 });
 
 // Proxy for the Data Service that requires authentication
 const securedDataServiceProxy = createProxyMiddleware({
     target: DATA_SERVICE_URL,
     changeOrigin: true,
+    // logLevel: 'debug',
     onProxyReq: (proxyReq, req, res) => {
         // req.user is attached by your verifyJWT middleware
         if (req.user) {
@@ -64,17 +66,17 @@ const securedDataServiceProxy = createProxyMiddleware({
 app.use('/api/v1/watchlist', verifyJWT, securedDataServiceProxy);
 
 // Secured User Account Routes
-app.use(
-    [
-        '/api/v1/users/logout',
-        '/api/v1/users/change-password',
-        '/api/v1/users/current-user',
-        '/api/v1/users/update-account',
-        '/api/v1/users/update-avatar'
-    ],
-    verifyJWT,       // Step 1: Verify the access token
-    authServiceProxy // Step 2: Proxy to the auth service
-);
+// app.use(
+//     [
+//         '/api/v1/users/logout',
+//         '/api/v1/users/change-password',
+//         '/api/v1/users/current-user',
+//         '/api/v1/users/update-account',
+//         '/api/v1/users/update-avatar'
+//     ],
+//     verifyJWT,       // Step 1: Verify the access token
+//     authServiceProxy // Step 2: Proxy to the auth service
+// );
 
 // Public User Auth Routes
 // Catches all other routes under /api/v1/users (login, register, refresh, google, etc.)
