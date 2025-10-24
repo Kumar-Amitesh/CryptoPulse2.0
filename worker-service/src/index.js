@@ -1,21 +1,18 @@
 import { Worker } from 'bullmq';
 import dotenv from 'dotenv';
-import connectDB from './config/db.config.js'; // Adjust path
-import { updateTopCoinsJob, updateWatchlistCoinsJob } from './controllers/coin.controllers.js'; // Adjust path
-// Ensure Redis client needed by jobs is initialized and exported correctly
-import { client as redisClient } from './config/redis.config.js'; // Adjust path
+import connectDB from './config/db.config.js'; 
+import { updateTopCoinsJob, updateWatchlistCoinsJob } from './controllers/coin.controllers.js'; 
+import { client as redisClient } from './config/redis.config.js'; 
 
-// Load environment variables
 dotenv.config({ path: '../../.env' });
 
-// Redis connection details for BullMQ Worker
 const redisConnection = {
     host: process.env.REDIS_HOST,
     port: process.env.REDIS_PORT,
-    username: process.env.REDIS_USERNAME, // Optional
-    password: process.env.REDIS_PASSWORD, // Optional
+    username: process.env.REDIS_USERNAME, 
+    password: process.env.REDIS_PASSWORD, 
     // Important: BullMQ needs its own connection, separate from the one used in jobs if using 'redis' v4 client
-    // For simplicity here, we assume the same config works, but for production consider ioredis or separate clients.
+    // For simplicity here, assume the same config works, but for production consider ioredis or separate clients.
     maxRetriesPerRequest: null // Required for redis v4+ compatibility with BullMQ v5+
 };
 
@@ -50,7 +47,7 @@ async function startWorker() {
     worker = new Worker(
         QUEUE_NAME,
         async (job) => {
-            // This function is called when a job is processed
+            // function called when a job is processed
             console.log(`[${new Date().toISOString()}] Processing job: ${job.name} (ID: ${job.id})`);
 
             try {
@@ -66,7 +63,7 @@ async function startWorker() {
                         throw new Error(`Unknown job: ${job.name}`);
                 }
                 console.log(`[${new Date().toISOString()}] Completed job: ${job.name} (ID: ${job.id})`);
-                // No need for manual ack like in amqplib, BullMQ handles it on successful promise resolution
+                // BullMQ handles it on successful promise resolution
             } catch (error) {
                  console.error(`[${new Date().toISOString()}] Failed job: ${job.name} (ID: ${job.id})`, error);
                  // Throw the error again so BullMQ knows the job failed and can handle retries/failure logic
@@ -75,13 +72,13 @@ async function startWorker() {
         },
         {
             connection: redisConnection,
-            concurrency: 5, // Process up to 5 jobs concurrently (adjust as needed)
+            concurrency: 5, // Process up to 5 jobs concurrently 
             removeOnComplete: { count: 1000 }, // Keep last 1000 completed jobs
             removeOnFail: { count: 5000 } // Keep last 5000 failed jobs
         }
     );
 
-    // --- Worker Event Listeners (Optional but Recommended) ---
+    // --- Worker Event Listeners ---
     worker.on('completed', (job, result) => {
         console.log(`Job ${job.id} (${job.name}) completed successfully.`);
     });
@@ -111,11 +108,11 @@ async function shutdown() {
         await worker.close();
     }
      if (redisClient && redisClient.isReady) {
-        await redisClient.quit(); // Close the job's redis client
+        await redisClient.quit();
     }
     console.log('Worker closed.');
     process.exit(0);
 }
 
-process.on('SIGTERM', shutdown); // For Docker/Kubernetes
-process.on('SIGINT', shutdown); // For Ctrl+C
+process.on('SIGTERM', shutdown); 
+process.on('SIGINT', shutdown); 

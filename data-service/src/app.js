@@ -27,13 +27,11 @@ app.use('/api/v1/watchlist',watchlist)
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {
-    // Log the error using your Winston logger
     logger.error(`Error: ${err.message}`, { stack: err.stack, statusCode: err.statusCode });
 
     const statusCode = err.statusCode || 500;
     const message = err.message || 'Internal Server Error';
 
-    // Send a consistent JSON error response
     res.status(statusCode).json({
         success: false,
         message: message,
@@ -43,9 +41,7 @@ app.use((err, req, res, next) => {
 
 app.get('/api/v1/health', async (req, res) => {
   try {
-    // 1. Check Redis connection
     await redisClient.ping();
-    // 2. Check MongoDB connection (Mongoose connection state)
     if (mongoose.connection.readyState !== 1) {
       throw new Error('MongoDB not connected');
     }

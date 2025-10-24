@@ -1,6 +1,5 @@
 import { createClient } from 'redis'
 import logger from '../utils/logger.utils.js'
-// import cryptoStats from '../utils/coinService.utils.js'
 import dotenv from 'dotenv'
 dotenv.config({
     path: '../../.env'
@@ -22,12 +21,6 @@ client.on('ready', () => {
     logger.info('Redis client is ready');
 });
 
-// client.subscribe('crypto-events', (message) => {
-//   const data = JSON.parse(message);
-//   if (data.trigger === 'update') {
-//     cryptoStats();
-//   }
-// });
 
 const connectRedis = async()=>{
     try{

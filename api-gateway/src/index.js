@@ -10,7 +10,7 @@ dotenv.config({
 
 let server;
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT
 
 connectDB()
 .then(() => {

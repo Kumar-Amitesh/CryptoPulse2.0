@@ -1,11 +1,9 @@
-import Watchlist from '../models/WatchList.models.js'; // Adjust path if necessary
-import api from '../utils/axiosInstance.utils.js'; // Adjust path
-import { client as redisClient } from '../config/redis.config.js'; // Adjust path
-import { COINS_PER_PAGE, WATCHLIST_BATCH_SIZE } from '../constants.js'; // Adjust path
+import Watchlist from '../models/WatchList.models.js'; 
+import api from '../utils/axiosInstance.utils.js';
+import { client as redisClient } from '../config/redis.config.js'; 
+import { COINS_PER_PAGE, WATCHLIST_BATCH_SIZE } from '../constants.js'; 
 
-// --- Caching Logic (from old work-server/index.js) ---
 const cacheCoinsData = async (allCoinData) => {
-    // ... (Keep the exact same logic as before)
     if (allCoinData.length === 0) {
         console.log("No data to cache.");
         return;
@@ -28,7 +26,6 @@ const cacheCoinsData = async (allCoinData) => {
     allCoinData.forEach((coin) => {
         const key = `coin:${coin.id}`;
         const value = JSON.stringify(coin);
-        // Consider slightly longer expiry for worker? Or keep it short.
         pipeline.set(key, value, { EX: 300 }); // 5 minutes expiry
     });
 
@@ -42,104 +39,97 @@ const cacheCoinsData = async (allCoinData) => {
     }
 };
 
-// --- Top Coins Update Job (from old work-server/index.js runUpdateJob) ---
 export const updateTopCoinsJob = async () => {
     console.log("WORKER: Starting top coins data update...");
-    let allCoinData = []; //
+    let allCoinData = []; 
 
     try {
-        const params = { //
-            vs_currency: "usd", //
-            price_change_percentage: "1h,24h,7d", // Keep it lean for top coins
-            per_page: COINS_PER_PAGE, //
+        const params = { 
+            vs_currency: "usd", 
+            price_change_percentage: "1h,24h,7d", 
+            per_page: COINS_PER_PAGE, 
         };
 
         // Fetch pages concurrently
         const [page1Response, page2Response] = await Promise.all([
-            api.get("/", { params: { ...params, page: 1 } }), //
-            api.get("/", { params: { ...params, page: 2 } }), //
+            api.get("/", { params: { ...params, page: 1 } }), 
+            api.get("/", { params: { ...params, page: 2 } }), 
         ]);
 
-        allCoinData = [...page1Response.data, ...page2Response.data]; //
-        console.log(`WORKER: Fetched ${allCoinData.length} top coins.`); //
+        allCoinData = [...page1Response.data, ...page2Response.data]; 
+        console.log(`WORKER: Fetched ${allCoinData.length} top coins.`); 
 
-        await cacheCoinsData(allCoinData); //
-        console.log("WORKER: Finished top coins data update."); //
+        await cacheCoinsData(allCoinData); 
+        console.log("WORKER: Finished top coins data update."); 
     } catch (error) {
-        console.error("WORKER: Error fetching top coins data:", error.message); //
+        console.error("WORKER: Error fetching top coins data:", error.message); 
     }
 };
 
-// --- Watchlist Update Job (from old work-server/index.js runWatchlistUpdateJob) ---
 export const updateWatchlistCoinsJob = async () => {
-    console.log("WORKER: Starting watchlist coin data update..."); //
+    console.log("WORKER: Starting watchlist coin data update..."); 
     try {
-        // Find distinct coinIds from the Watchlist collection
         const allWatchlistedIds = await Watchlist.distinct("coinId");
 
-        if (allWatchlistedIds.length === 0) { //
-            console.log("WORKER: No watchlisted coins to update."); //
-            return; //
+        if (allWatchlistedIds.length === 0) { 
+            console.log("WORKER: No watchlisted coins to update."); 
+            return; 
         }
 
-        const redisKeys = allWatchlistedIds.map((id) => `coin:${id}`); //
+        const redisKeys = allWatchlistedIds.map((id) => `coin:${id}`); 
 
         // Check which coins are already in Redis
-        const results = await redisClient.mGet(redisKeys); //
+        const results = await redisClient.mGet(redisKeys); 
 
-        const coinsToFetch = []; //
-        results.forEach((result, index) => { //
-            if (result === null) { // If not found in cache
-                coinsToFetch.push(allWatchlistedIds[index]); // Add to fetch list
+        const coinsToFetch = []; 
+        results.forEach((result, index) => { 
+            if (result === null) { 
+                coinsToFetch.push(allWatchlistedIds[index]); 
             }
         });
 
-        if (coinsToFetch.length === 0) { //
-            console.log("WORKER: All watchlisted coins are already in the cache."); //
-            return; //
+        if (coinsToFetch.length === 0) { 
+            console.log("WORKER: All watchlisted coins are already in the cache."); 
+            return; 
         }
 
-        console.log(`WORKER: Found ${coinsToFetch.length} watchlist coins missing from cache.`); //
+        console.log(`WORKER: Found ${coinsToFetch.length} watchlist coins missing from cache.`); 
 
         // Fetch missing coins in batches
         for (let i = 0; i < coinsToFetch.length; i += WATCHLIST_BATCH_SIZE) {
             const batchIds = coinsToFetch.slice(i, i + WATCHLIST_BATCH_SIZE); //
-            const idsString = batchIds.join(","); // CoinGecko needs comma-separated IDs
+            const idsString = batchIds.join(","); 
 
-            // Fetch data for the batch - Note: CoinGecko /coins/markets takes 'ids' param
-            const response = await api.get("/", { //
+            const response = await api.get("/", { 
                 params: {
-                    vs_currency: "usd", //
-                    ids: idsString, // Pass the specific IDs
-                    price_change_percentage: "1h,24h,7d,14d,30d,200d,1y", // More data for watchlist
+                    vs_currency: "usd", 
+                    ids: idsString, 
+                    price_change_percentage: "1h,24h,7d,14d,30d,200d,1y", 
                 },
             });
 
-            const newCoinsData = response.data; //
+            const newCoinsData = response.data; 
 
-            // Cache the newly fetched data
             if (newCoinsData && newCoinsData.length > 0) {
-                const pipeline = redisClient.multi(); //
-                newCoinsData.forEach((coin) => { //
-                    const key = `coin:${coin.id}`; //
-                    const value = JSON.stringify(coin); //
-                    // Use a slightly longer expiry for watchlist items? e.g., 10 mins
-                    pipeline.set(key, value, { EX: 600 }); //
+                const pipeline = redisClient.multi(); 
+                newCoinsData.forEach((coin) => { 
+                    const key = `coin:${coin.id}`; 
+                    const value = JSON.stringify(coin); 
+                    pipeline.set(key, value, { EX: 600 }); 
                 });
-                await pipeline.exec(); //
-                console.log(`WORKER: Cached ${newCoinsData.length} watchlist coins from batch starting at index ${i}.`); //
+                await pipeline.exec(); 
+                console.log(`WORKER: Cached ${newCoinsData.length} watchlist coins from batch starting at index ${i}.`); 
             } else {
                  console.log(`WORKER: No data returned for watchlist batch: ${idsString}`);
             }
 
-
             // Pause slightly between batches if needed to respect API rate limits
             if (i + WATCHLIST_BATCH_SIZE < coinsToFetch.length) {
-                await new Promise((resolve) => setTimeout(resolve, 2000)); // 2-second pause
+                await new Promise((resolve) => setTimeout(resolve, 2000)); 
             }
         }
         console.log("WORKER: Finished watchlist coin data update.");
     } catch (error) {
-        console.error("WORKER: Error fetching watchlist data:", error.message); //
+        console.error("WORKER: Error fetching watchlist data:", error.message); 
     }
 };

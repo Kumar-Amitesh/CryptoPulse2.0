@@ -2,10 +2,8 @@ import pkg from 'bullmq';
 const { Queue } = pkg;
 import dotenv from 'dotenv';
 
-// Load environment variables
 dotenv.config({ path: '../../.env' });
 
-// Redis connection details
 const redisConnection = {
   host: process.env.REDIS_HOST,
   port: process.env.REDIS_PORT,

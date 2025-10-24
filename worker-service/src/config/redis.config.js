@@ -1,6 +1,5 @@
 import { createClient } from 'redis'
-// import logger from '../utils/logger.utils.js'
-// import cryptoStats from '../utils/coinService.utils.js'
+import logger from '../utils/logger.utils.js'
 import dotenv from 'dotenv';
 dotenv.config({ path: '../../.env' });
 
@@ -14,20 +13,14 @@ const client = createClient({
 })
 
 client.on('error', (err) => {
-    // logger.error(`Redis client error: ${err.message}`);
+    logger.error(`Redis client error: ${err.message}`);
     console.error(`Redis client error: ${err.message}`);
 })
 client.on('ready', () => {
-    // logger.info('Redis client is ready');
+    logger.info('Redis client is ready');
     console.log('Redis client is ready');
 });
 
-// client.subscribe('crypto-events', (message) => {
-//   const data = JSON.parse(message);
-//   if (data.trigger === 'update') {
-//     cryptoStats();
-//   }
-// });
 
 const connectRedis = async()=>{
     try{
@@ -35,7 +28,7 @@ const connectRedis = async()=>{
         console.log(`Redis connected: ${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`);
     }
     catch(error){
-        // logger.error(`Redis connection failed: ${error.message}`);
+        logger.error(`Redis connection failed: ${error.message}`);
         console.error(`Redis connection failed: ${error.message}`);
         process.exit(1);
     }

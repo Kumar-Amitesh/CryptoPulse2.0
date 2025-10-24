@@ -4,11 +4,9 @@ import ApiResponse from '../utils/ApiResponse.utils.js';
 import Watchlist from '../models/WatchList.models.js'
 import { client as redisClient } from '../config/redis.config.js';
 
-// Helper to get user ID and validate
 const getUserIdFromHeader = (req) => {
   const userId = req.header('X-User-ID');
   if (!userId) {
-    // This error should only happen if the gateway is misconfigured
     throw new ApiError(401, 'Unauthorized - No user ID provided');
   }
   return userId;
@@ -57,10 +55,6 @@ const addToWatchlist = asyncHandler(async (req, res) => {
   const userId = getUserIdFromHeader(req);
   const { coinId } = req.body;
 
-  // 1. Validation: Check if the coin is one of the 500 we support
-//   if (!SUPPORTED_COINS.includes(coinId)) {
-//     throw new ApiError(400, 'This coin is not supported by the application.');
-//   }
 
   const existingItem = await Watchlist.findOne({ user: userId, coinId: coinId });
   if (existingItem) {
