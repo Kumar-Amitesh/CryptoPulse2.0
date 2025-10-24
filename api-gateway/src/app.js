@@ -68,24 +68,52 @@ const dataServiceProxy = createProxyMiddleware({
 });
 
 // Proxy for the Data Service that requires authentication
+// const securedDataServiceProxy = createProxyMiddleware({
+//     target: DATA_SERVICE_URL,
+//     changeOrigin: true,
+//     // logLevel: 'debug',
+//     pathRewrite: (path, req) => {
+//       // This function ensures the '/api/v1/users' prefix is always present
+//     //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
+//     //   const newPath = '/api/v1/users' + originalPathWithoutPrefix;
+//     const newPath = '/api/v1/watchlist' + path;
+//       console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); // Log rewrite
+//       logger.debug(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
+//       return newPath; // Return the full path expected by the auth service
+//     },
+//     onProxyReq: (proxyReq, req, res) => {
+//         // req.user is attached by your verifyJWT middleware
+//         if (req.user) {
+//             // Add the user ID as a custom header for the downstream service
+//             proxyReq.setHeader('X-User-ID', req.user._id);
+//         }
+//     }
+// });
+
+
 const securedDataServiceProxy = createProxyMiddleware({
     target: DATA_SERVICE_URL,
     changeOrigin: true,
-    // logLevel: 'debug',
+    logLevel: 'debug', 
     pathRewrite: (path, req) => {
-      // This function ensures the '/api/v1/users' prefix is always present
-    //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
-    //   const newPath = '/api/v1/users' + originalPathWithoutPrefix;
-    const newPath = '/api/v1/watchlist' + path;
-      console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); // Log rewrite
-      logger.debug(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
-      return newPath; // Return the full path expected by the auth service
+        let newPath;
+        if (path.startsWith('/watchlist')) {
+            newPath = '/api/v1' + path;
+        } else if (path.startsWith('/portfolio')) {
+             newPath = '/api/v1' + path; 
+        } else {
+            newPath = path; 
+        }
+        console.log(`[HPM Secured PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
+        logger.debug(`[HPM Secured PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
+        return newPath;
     },
     onProxyReq: (proxyReq, req, res) => {
-        // req.user is attached by your verifyJWT middleware
         if (req.user) {
-            // Add the user ID as a custom header for the downstream service
             proxyReq.setHeader('X-User-ID', req.user._id);
+            logger.debug(`[HPM Set Header] X-User-ID: ${req.user._id} for ${req.originalUrl}`);
+        } else {
+             logger.warn(`[HPM Set Header] No req.user found for ${req.originalUrl}`);
         }
     }
 });
@@ -97,6 +125,7 @@ const securedDataServiceProxy = createProxyMiddleware({
 
 // Secured Data Routes
 app.use('/api/v1/watchlist', verifyJWT, securedDataServiceProxy);
+app.use('/api/v1/portfolio', verifyJWT, securedDataServiceProxy);
 
 // Secured User Account Routes
 // app.use(

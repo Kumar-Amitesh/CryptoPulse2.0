@@ -21,10 +21,12 @@ app.use(cookieParser())
 // import routes
 import dataRouter from './routes/data.routes.js'
 import watchlist from './routes/watchlist.routes.js'
+import portfolioRouter from './routes/portfolio.routes.js'
 
 //routes declaration
 app.use('/api/v1/coins',dataRouter)
 app.use('/api/v1/watchlist',watchlist)
+app.use('/api/v1/portfolio', portfolioRouter)
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {
@@ -40,7 +42,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-app.get('/api/v1/health', async (req, res) => {
+app.get('/api/v1/data/health', async (req, res) => {
   try {
     await redisClient.ping();
     if (mongoose.connection.readyState !== 1) {
