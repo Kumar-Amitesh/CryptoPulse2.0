@@ -3,6 +3,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit'
+import mongoose from 'mongoose';
+import { redisClient } from './config/redis.config.js';
 
 const app = express()
 
