@@ -31,9 +31,24 @@ console.log(`Data Service URL: ${DATA_SERVICE_URL}`);
 // --- Create Proxy Instances ---
 
 // Proxy for the Authentication Service
+// const authServiceProxy = createProxyMiddleware({
+//     target: AUTH_SERVICE_URL,
+//     changeOrigin: true,
+// });
+
 const authServiceProxy = createProxyMiddleware({
     target: AUTH_SERVICE_URL,
     changeOrigin: true,
+    logLevel: 'debug',
+    pathRewrite: (path, req) => {
+      // This function ensures the '/api/v1/users' prefix is always present
+    //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
+    //   const newPath = '/api/v1/users' + originalPathWithoutPrefix;
+    const newPath = '/api/v1/users' + path;
+      console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); // Log rewrite
+      logger.debug(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
+      return newPath; // Return the full path expected by the auth service
+    }
 });
 
 // Proxy for the Data Service
@@ -41,6 +56,15 @@ const dataServiceProxy = createProxyMiddleware({
     target: DATA_SERVICE_URL,
     changeOrigin: true,
     logLevel: 'debug',
+    pathRewrite: (path, req) => {
+      // This function ensures the '/api/v1/users' prefix is always present
+    //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
+    //   const newPath = '/api/v1/users' + originalPathWithoutPrefix;
+    const newPath = '/api/v1/coins' + path;
+      console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); // Log rewrite
+      logger.debug(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
+      return newPath; // Return the full path expected by the auth service
+    }
 });
 
 // Proxy for the Data Service that requires authentication
@@ -48,6 +72,15 @@ const securedDataServiceProxy = createProxyMiddleware({
     target: DATA_SERVICE_URL,
     changeOrigin: true,
     // logLevel: 'debug',
+    pathRewrite: (path, req) => {
+      // This function ensures the '/api/v1/users' prefix is always present
+    //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
+    //   const newPath = '/api/v1/users' + originalPathWithoutPrefix;
+    const newPath = '/api/v1/watchlist' + path;
+      console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); // Log rewrite
+      logger.debug(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
+      return newPath; // Return the full path expected by the auth service
+    },
     onProxyReq: (proxyReq, req, res) => {
         // req.user is attached by your verifyJWT middleware
         if (req.user) {

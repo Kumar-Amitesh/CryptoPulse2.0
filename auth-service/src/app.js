@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit'
 import mongoose from 'mongoose';
 import { client as redisClient } from './config/redis.config.js';
+import logger from './utils/logger.utils.js';
 
 const app = express()
 
@@ -47,7 +48,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-app.get('/api/v1/health', async (req, res) => {
+app.get('/api/v1/users/health', async (req, res) => {
   try {
     await redisClient.ping();
     if (mongoose.connection.readyState !== 1) {
