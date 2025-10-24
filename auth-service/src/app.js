@@ -20,14 +20,9 @@ app.use(cookieParser())
 app.use(helmet())
 
 const limiter = rateLimit({
-    // How long we should remember the requests. Defaults to 60000 ms (= 1 minute).
-    windowMs: 15*60*1000,    //15 minutes
-    // The maximum number of connections to allow during the window before rate limiting the client.
-    // Limit each IP to 10 requests per `window` (here, per 15 minutes).
+    windowMs: 15*60*1000,  
     limit:10,
-    // Response to return after limit is reached.
     message: 'Too many requests from this IP, please try again later.',
-    // HTTP status code after limit is reached (default is 429).
     statusCode: 429
 })
 app.use(limiter)
@@ -40,13 +35,11 @@ app.use('/api/v1/users',userRouter)
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {
-    // Log the error using your Winston logger
     logger.error(`Error: ${err.message}`, { stack: err.stack, statusCode: err.statusCode });
 
     const statusCode = err.statusCode || 500;
     const message = err.message || 'Internal Server Error';
 
-    // Send a consistent JSON error response
     res.status(statusCode).json({
         success: false,
         message: message,
@@ -56,9 +49,7 @@ app.use((err, req, res, next) => {
 
 app.get('/api/v1/health', async (req, res) => {
   try {
-    // 1. Check Redis connection
     await redisClient.ping();
-    // 2. Check MongoDB connection (Mongoose connection state)
     if (mongoose.connection.readyState !== 1) {
       throw new Error('MongoDB not connected');
     }

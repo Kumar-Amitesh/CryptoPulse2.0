@@ -4,9 +4,10 @@ import cookieParser from 'cookie-parser';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import dotenv from 'dotenv';
 import verifyJWT from './middleware/auth.middleware.js';
+import logger from './utils/logger.utils.js';
 
 dotenv.config({
-    path:'../../.env' // Assuming .env is in the root folder
+    path:'../../.env' 
 });
 
 const app = express();
@@ -20,7 +21,7 @@ app.use(cookieParser());
 app.use(express.urlencoded({extended: true, limit: "5kb"}));
 app.use(express.json());
 
-// Service URLs from .env file
+// Service URLs 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL;
 const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL;
 
@@ -41,7 +42,7 @@ const dataServiceProxy = createProxyMiddleware({
     changeOrigin: true,
 });
 
-// Proxy for the Data Service that *requires* user ID
+// Proxy for the Data Service that requires authentication
 const securedDataServiceProxy = createProxyMiddleware({
     target: DATA_SERVICE_URL,
     changeOrigin: true,
@@ -57,12 +58,12 @@ const securedDataServiceProxy = createProxyMiddleware({
 
 // --- Route Definitions ---
 
-// Express matches routes in order. We define the most specific (secured) routes first.
+// Express matches routes in order. The most specific (secured) routes first.
 
-// 1. Secured Data Routes
+// Secured Data Routes
 app.use('/api/v1/watchlist', verifyJWT, securedDataServiceProxy);
 
-// 2. Secured User Account Routes
+// Secured User Account Routes
 app.use(
     [
         '/api/v1/users/logout',
@@ -75,11 +76,11 @@ app.use(
     authServiceProxy // Step 2: Proxy to the auth service
 );
 
-// 3. Public User Auth Routes
+// Public User Auth Routes
 // Catches all other routes under /api/v1/users (login, register, refresh, google, etc.)
 app.use('/api/v1/users', authServiceProxy);
 
-// 4. Public Coin Data Routes
+// Public Coin Data Routes
 app.use('/api/v1/coins', dataServiceProxy);
 
 
@@ -87,6 +88,7 @@ app.use('/api/v1/coins', dataServiceProxy);
 app.use((err, req, res, next) => {
     const statusCode = err.statusCode || 500;
     const message = err.message || 'Internal Server Error';
+    logger.error(`[Gateway Error] ${statusCode} - ${message} - ${req.originalUrl} - ${req.method}`);
     console.error(`[Gateway Error] ${statusCode} - ${message} - ${req.originalUrl} - ${req.method}`);
     
     res.status(statusCode).json({

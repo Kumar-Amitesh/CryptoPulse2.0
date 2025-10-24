@@ -35,7 +35,6 @@ const registerUser = asyncHandler(async(req,res,next)=>{
     const {fullName,email,password,username} = req.body
 
     if(
-        // some - Determines whether the specified callback function returns true for any element of an array.
         [fullName,username,email,password].some((field) => field?.trim()==="")
     ){
         throw new ApiError(400,'All fields are required')
@@ -95,14 +94,12 @@ const loginUser = asyncHandler(async(req,res,next)=>{
         throw new ApiError(400,'User does not exist')
     }
 
-    // --- ADD THIS LOGIC ---
     // Check if the user signed up using an OAuth provider
     if (user.oauth?.isOauth) {
         throw new ApiError(400, 
             `User registered with ${user.oauth.provider}. Please log in using Google.`
         );
     }
-    // --- END OF ADDED LOGIC ---
 
     const isPasswordValid = user.isPasswordCorrect(password)
 
@@ -258,13 +255,13 @@ const googleAuthorizationCallback = asyncHandler(async(req,res,next)=>{
             // newUser.avatar = avatar.url
             // await newUser.save({validateBeforeSave:false})
 
-            // 2. Not found by Google ID. Now, check if a user exists with that email.
+            // Not found by Google ID. Now, check if a user exists with that email.
             const existingUserWithEmail = await User.findOne({ email: email });
 
             if (existingUserWithEmail) {
-                // 3. User with this email exists! Link the Google account to them.
+                // User with this email exists! Link the Google account to them.
                 
-                // Optional: Check they aren't already linked to a *different* OAuth provider
+                // Check user aren't already linked to a different OAuth provider
                 if (existingUserWithEmail.oauth?.isOauth) {
                     throw new ApiError(400, 'This email is already linked to another login method.');
                 }
@@ -273,10 +270,9 @@ const googleAuthorizationCallback = asyncHandler(async(req,res,next)=>{
                     isOauth: true,
                     provider: 'google',
                     providerId: decodedToken.sub,
-                    providerRefreshToken: refresh_token || null // Add the refresh token
+                    providerRefreshToken: refresh_token || null 
                 };
                 
-                // Optionally update their profile picture/name from Google
                 existingUserWithEmail.fullName = decodedToken.name;
                 if (picture) {
                     const avatar = await uploadOnCloudinary(picture);
@@ -284,15 +280,15 @@ const googleAuthorizationCallback = asyncHandler(async(req,res,next)=>{
                 }
 
                 await existingUserWithEmail.save({ validateBeforeSave: false });
-                user = existingUserWithEmail; // Set 'user' to the user we just linked
+                user = existingUserWithEmail; 
 
             } else {
-                // 4. No user found by Google ID OR email. Create a brand new user.
+                // No user found by Google ID OR email. Create a new user.
                 const newUser = await User.create({
                     fullName: decodedToken.name,
                     email: decodedToken.email,
-                    username: decodedToken.email.split('@')[0], // Consider adding a random suffix for uniqueness
-                    password: crypto.randomBytes(16).toString('hex'), // Random password
+                    username: decodedToken.email.split('@')[0],
+                    password: crypto.randomBytes(16).toString('hex'), 
                     oauth: {
                         isOauth: true,
                         provider: 'google',
@@ -301,12 +297,11 @@ const googleAuthorizationCallback = asyncHandler(async(req,res,next)=>{
                     }
                 });
 
-                // Upload avatar for the new user
                 const avatar = await uploadOnCloudinary(picture);
                 newUser.avatar = avatar.url;
                 await newUser.save({ validateBeforeSave: false });
                 
-                user = newUser; // Set 'user' to the user we just created
+                user = newUser; 
             }
         }
 
@@ -351,7 +346,6 @@ const logoutUser = asyncHandler(async(req,res,next)=>{
             }
         },
         {
-            // By default, findOneAndUpdate() returns the document as it was before update was applied. If you set new: true, findOneAndUpdate() will instead give you the object after update was applied.
             new: true
         }
     )

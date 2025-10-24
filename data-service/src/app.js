@@ -23,7 +23,7 @@ import watchlist from './routes/watchlist.routes.js'
 
 //routes declaration
 app.use('/api/v1/coins',dataRouter)
-app.use('api/v1/watchlist',watchlist)
+app.use('/api/v1/watchlist',watchlist)
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {

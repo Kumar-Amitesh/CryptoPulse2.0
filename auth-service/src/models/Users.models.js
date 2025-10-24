@@ -23,7 +23,7 @@ const oauthSchema = new Schema({
     type: String,
     default: null
   }
-}, { _id: false }); // no separate _id for subdocument
+}, { _id: false }); 
 
 const userSchema = new Schema({
     username:{
@@ -44,7 +44,6 @@ const userSchema = new Schema({
         trim: true,
         validate:{
             validator: function(value) {
-                // Regular expression to validate email format
                 return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(value);
             },
             message: props => `${props.value} is not a valid email address!`
@@ -56,7 +55,7 @@ const userSchema = new Schema({
         trim: true
     },
     avatar:{
-        type: String    // cloudinary url
+        type: String    
     },
     password:{
         type: String,
@@ -65,7 +64,7 @@ const userSchema = new Schema({
     },
     refreshToken:{
         type: String,
-        select: false, // This field will not be returned in queries by default
+        select: false, 
     },
     oauth:{
         type: oauthSchema,
@@ -76,7 +75,7 @@ const userSchema = new Schema({
     Collection: 'users'
 });
 
-//  These are functions that run before a specific operation (like saving a document or validating it).
+
 userSchema.pre('save', async function(next){
     if(!this.isModified('password')) return next();
 
@@ -84,8 +83,6 @@ userSchema.pre('save', async function(next){
     next()
 })
 
-// userSchema.methods is an object where you can define multiple instance methods for the model.
-// If it were userSchema.method, that would imply you're setting a single method (or you'd have to overwrite it every time you add a new one).
 userSchema.methods.isPasswordCorrect = async function (password) {
     return await bcrypt.compare(password,this.password)
 }
