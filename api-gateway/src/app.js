@@ -25,8 +25,46 @@ app.use(express.json());
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL;
 const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL;
 
+if (!AUTH_SERVICE_URL || !DATA_SERVICE_URL) {
+    const errorMsg = "FATAL ERROR: AUTH_SERVICE_URL or DATA_SERVICE_URL is not defined in environment variables.";
+    logger.error(errorMsg);
+    console.error(errorMsg);
+    process.exit(1); // Exit if essential config is missing
+}
+
 console.log(`Auth Service URL: ${AUTH_SERVICE_URL}`);
 console.log(`Data Service URL: ${DATA_SERVICE_URL}`);
+
+
+
+// --- Helper Function for Logging ---
+const logProvider = (provider) => {
+    return {
+        log: logger.debug.bind(logger), // Use debug level for HPM logs
+        info: logger.info.bind(logger),
+        warn: logger.warn.bind(logger),
+        error: logger.error.bind(logger),
+    };
+};
+
+// --- Common Proxy Options ---
+const commonProxyOptions = {
+    changeOrigin: true,
+    logLevel: 'debug', // Use 'debug' for detailed HPM logs via Winston
+    logProvider: logProvider, // Use Winston logger
+    onProxyReq: fixRequestBody, // Add this to handle proxied POST/PUT/PATCH requests correctly
+    onError: (err, req, res) => { // Custom error handling
+        logger.error(`[HPM Proxy Error] ${err.message}`, { url: req.originalUrl, target: err.target, code: err.code });
+        console.error(`[HPM Proxy Error] ${err.message}`);
+        // Avoid sending HPM's default error page
+        if (!res.headersSent) {
+             res.status(503).json({ // Service Unavailable
+                 success: false,
+                 message: 'The service is temporarily unavailable. Please try again later.'
+             });
+        }
+    }
+};
 
 // --- Create Proxy Instances ---
 
@@ -39,7 +77,6 @@ console.log(`Data Service URL: ${DATA_SERVICE_URL}`);
 const authServiceProxy = createProxyMiddleware({
     target: AUTH_SERVICE_URL,
     changeOrigin: true,
-    logLevel: 'debug',
     pathRewrite: (path, req) => {
       // This function ensures the '/api/v1/users' prefix is always present
     //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
@@ -53,9 +90,9 @@ const authServiceProxy = createProxyMiddleware({
 
 // Proxy for the Data Service
 const dataServiceProxy = createProxyMiddleware({
+    ...commonProxyOptions,
     target: DATA_SERVICE_URL,
     changeOrigin: true,
-    logLevel: 'debug',
     pathRewrite: (path, req) => {
       // This function ensures the '/api/v1/users' prefix is always present
     //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
@@ -64,6 +101,18 @@ const dataServiceProxy = createProxyMiddleware({
       console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); // Log rewrite
       logger.debug(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
       return newPath; // Return the full path expected by the auth service
+    }
+});
+
+const publicAnalyticsProxy = createProxyMiddleware({
+    ...commonProxyOptions,
+    target: DATA_SERVICE_URL,
+    changeOrigin: true,
+    pathRewrite: (path, req) => {
+        const newPath = '/api/v1/analytics' + path;
+        console.log(`[HPM Analytics PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
+        logger.debug(`[HPM Analytics PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
+        return newPath;
     }
 });
 
@@ -94,7 +143,6 @@ const dataServiceProxy = createProxyMiddleware({
 const securedDataServiceProxy = createProxyMiddleware({
     target: DATA_SERVICE_URL,
     changeOrigin: true,
-    logLevel: 'debug', 
     pathRewrite: (path, req) => {
         let newPath;
         if (path.startsWith('/watchlist')) {
@@ -146,6 +194,9 @@ app.use('/api/v1/users', authServiceProxy);
 
 // Public Coin Data Routes
 app.use('/api/v1/coins', dataServiceProxy);
+
+// Public Analytics Routes
+app.use('/api/v1/analytics', publicAnalyticsProxy);
 
 
 // --- Global Error Handler ---

@@ -22,11 +22,13 @@ app.use(cookieParser())
 import dataRouter from './routes/data.routes.js'
 import watchlist from './routes/watchlist.routes.js'
 import portfolioRouter from './routes/portfolio.routes.js'
+import analyticsRouter from './routes/analytics.routes.js'
 
 //routes declaration
 app.use('/api/v1/coins',dataRouter)
 app.use('/api/v1/watchlist',watchlist)
 app.use('/api/v1/portfolio', portfolioRouter)
+app.use('/api/v1/analytics', analyticsRouter)
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {

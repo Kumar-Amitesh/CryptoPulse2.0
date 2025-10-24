@@ -2,12 +2,47 @@ import Watchlist from '../models/WatchList.models.js';
 import api from '../utils/axiosInstance.utils.js';
 import { client as redisClient } from '../config/redis.config.js'; 
 import { COINS_PER_PAGE, WATCHLIST_BATCH_SIZE } from '../constants.js'; 
+import PriceSnapshot from '../models/PriceSnapshot.models.js';
+
+const savePriceSnapshots = async (allCoinData) => {
+    if (!allCoinData || allCoinData.length === 0) {
+        logger.warn("WORKER: No coin data provided to save snapshots.");
+        return;
+    }
+
+    const snapshotTime = new Date(); // consistent timestamp for the batch
+
+    const snapshots = allCoinData.map(coin => ({
+        coinId: coin.id,
+        price: coin.current_price,
+        timestamp: snapshotTime,
+        marketCap: coin.market_cap,
+        volume24h: coin.total_volume
+        // Map other relevant fields if needed
+    }));
+
+    try {
+        const result = await PriceSnapshot.insertMany(snapshots, { ordered: false }); // ordered: false allows inserting valid ones even if some fail
+        logger.info(`WORKER: Successfully saved ${result.length} price snapshots to MongoDB.`);
+        console.log(`WORKER: Successfully saved ${result.length} price snapshots to MongoDB.`);
+    } catch (error) {
+        // Handle potential duplicate key errors if running too frequently, or other DB errors
+        if (error.code === 11000) {
+             logger.warn("WORKER: Duplicate key error ignored while saving snapshots (likely due to concurrent updates).");
+        } else {
+            logger.error("WORKER: Error saving price snapshots to MongoDB:", error);
+            console.error("WORKER: Error saving price snapshots to MongoDB:", error);
+        }
+    }
+};
 
 const cacheCoinsData = async (allCoinData) => {
     if (allCoinData.length === 0) {
         console.log("No data to cache.");
         return;
     }
+
+    await savePriceSnapshots(allCoinData); // Call the snapshot saving function
 
     const sortedCoins = allCoinData.sort(
         (a, b) => (a.market_cap_rank || 9999) - (b.market_cap_rank || 9999)

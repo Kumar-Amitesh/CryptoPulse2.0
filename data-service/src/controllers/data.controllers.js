@@ -68,4 +68,106 @@ const getCoinById = asyncHandler(async (req, res) => {
 });
 
 
-export { getPaginatedCoins, getCoinById };
+/**
+ * @description Get historical price data for a specific coin
+ * @route GET /api/v1/coins/history/:coinId
+ * @access Public
+ */
+const getCoinHistory = asyncHandler(async (req, res) => {
+    const { coinId } = req.params;
+    const { interval = 'day', days = '30' } = req.query; // interval: 'hour' or 'day', days: number of days back
+
+    let groupByFormat;
+    let dateMatchCondition;
+    const now = new Date();
+    const daysNum = parseInt(days);
+
+    if (isNaN(daysNum) || daysNum <= 0) {
+        throw new ApiError(400, 'Invalid number of days specified.');
+    }
+
+    const startDate = new Date(now.getTime() - daysNum * 24 * 60 * 60 * 1000);
+    dateMatchCondition = { $gte: startDate };
+
+    switch (interval) {
+        case 'hour':
+            groupByFormat = {
+                year: { $year: "$timestamp" },
+                month: { $month: "$timestamp" },
+                day: { $dayOfMonth: "$timestamp" },
+                hour: { $hour: "$timestamp" },
+            };
+            break;
+        case 'day':
+            groupByFormat = {
+                year: { $year: "$timestamp" },
+                month: { $month: "$timestamp" },
+                day: { $dayOfMonth: "$timestamp" },
+            };
+            break;
+        default:
+            throw new ApiError(400, 'Invalid interval specified. Use "hour" or "day".');
+    }
+
+
+    const historyPipeline = [
+        {
+            $match: {
+                coinId: coinId,
+                timestamp: dateMatchCondition
+            }
+        },
+        {
+            $sort: { timestamp: 1 } 
+        },
+        {
+            $group: {
+                _id: groupByFormat,
+                // closing price (last price in the interval)
+                closePrice: { $last: "$price" },
+                 // open, high, low if needed for candlestick
+                 openPrice: { $first: "$price" },
+                 highPrice: { $max: "$price" },
+                 lowPrice: { $min: "$price" },
+                // timestamp of the last record in the group
+                timestamp: { $last: "$timestamp" }
+            }
+        },
+        {
+            $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1, "_id.hour": 1 } 
+        },
+        {
+            $project: {
+                _id: 0,
+                timestamp: "$timestamp", // actual timestamp from the last record
+                price: "$closePrice", // Rename closePrice to price for simplicity
+                // include open, high, low
+                 open: "$openPrice",
+                 high: "$highPrice",
+                 low: "$lowPrice",
+            }
+        }
+    ];
+
+    const historicalData = await PriceSnapshot.aggregate(historyPipeline);
+
+    if (!historicalData) {
+        throw new ApiError(500, "Failed to fetch historical data.");
+    }
+
+    if (historicalData.length === 0) {
+        // Check if the coin itself exists in Redis to differentiate no history vs no coin
+        const coinExists = await redisClient.exists(`coin:${coinId}`);
+         if (!coinExists) {
+             throw new ApiError(404, `Coin with ID '${coinId}' not found.`);
+         } else {
+            // Coin exists, but no history in the requested range
+             return res.status(200).json(new ApiResponse(200, [], `No historical data found for '${coinId}' in the last ${days} days with '${interval}' interval.`));
+         }
+    }
+
+
+    return res.status(200).json(new ApiResponse(200, historicalData, `Historical data for ${coinId} fetched successfully`));
+});
+
+export { getPaginatedCoins, getCoinById, getCoinHistory };
