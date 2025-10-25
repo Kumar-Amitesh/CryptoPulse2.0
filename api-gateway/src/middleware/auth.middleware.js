@@ -28,6 +28,8 @@ const verifyJWT = asyncHandler(
                 fullName: user.fullName,
                 avatar: user.avatar
             }
+            // headers persist through proxying, while arbitrary req fields often don’t.
+            req.headers['X-USER-Id'] = user._id;
             next()
         }
         catch(error){

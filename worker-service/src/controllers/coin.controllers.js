@@ -3,6 +3,7 @@ import api from '../utils/axiosInstance.utils.js';
 import { client as redisClient } from '../config/redis.config.js'; 
 import { COINS_PER_PAGE, WATCHLIST_BATCH_SIZE } from '../constants.js'; 
 import PriceSnapshot from '../models/PriceSnapshot.models.js';
+import logger from '../utils/logger.utils.js';
 
 const savePriceSnapshots = async (allCoinData) => {
     if (!allCoinData || allCoinData.length === 0) {
