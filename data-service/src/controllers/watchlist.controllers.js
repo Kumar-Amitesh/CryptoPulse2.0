@@ -79,9 +79,20 @@ const addToWatchlist = asyncHandler(async (req, res) => {
     coinId: coinId,
   });
 
-  if(redisClient.exists(`watchlist:${userId}`)) { {
-    redisClient.del(`watchlist:${userId}`);
-  } }
+  if(await redisClient.exists(`watchlist:${userId}`)) { 
+    await redisClient.del(`watchlist:${userId}`);
+    // await redisClient.get(`watchlist:${userId}`).then(async (data) => {
+    //   if (data) {
+    //     const watchlist = JSON.parse(data);
+    //     const coinDataJson = await redisClient.get(`coin:${coinId}`);
+    //     if (coinDataJson) {
+    //       const coinData = JSON.parse(coinDataJson);
+    //       watchlist.push(coinData);
+    //       await redisClient.set(`watchlist:${userId}`, JSON.stringify(watchlist), { EX: 1800 });
+    //     }
+    //   }
+    // });
+  }
 
   return res
     .status(201)
@@ -106,6 +117,17 @@ const removeFromWatchlist = asyncHandler(async (req, res) => {
 
   if (!deletedItem) {
     throw new ApiError(404, 'Coin not found on watchlist.');
+  }
+
+  if(await redisClient.exists(`watchlist:${userId}`)) { 
+    // await redisClient.del(`watchlist:${userId}`);
+    await redisClient.get(`watchlist:${userId}`).then(async (data) => {
+      if (data) {
+        let watchlist = JSON.parse(data);
+        watchlist = watchlist.filter(coin => coin.id !== coinId);
+        await redisClient.set(`watchlist:${userId}`, JSON.stringify(watchlist), { EX: 1800 });
+      }
+    })
   }
 
   return res
