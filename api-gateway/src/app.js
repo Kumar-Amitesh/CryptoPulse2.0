@@ -1,16 +1,26 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+// fixRequestBody ensures proxied requests keep a correct body (especially for non-GET methods and certain content-types).
+import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
 import dotenv from 'dotenv';
 import verifyJWT from './middleware/auth.middleware.js';
 import logger from './utils/logger.utils.js';
+import userRateLimiter from './middleware/rateLimit.middleware.js';
+import { RedisStore } from 'rate-limit-redis'
+import { client as redisClient } from './config/redis.config.js';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+
 
 dotenv.config({
     path:'../../.env' 
 });
 
 const app = express();
+
+// Trust the first proxy in front of your app
+// This is a common setting for many hosting providers.
+app.set('trust proxy', 1);
 
 
 app.use(cors({
@@ -20,6 +30,25 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.urlencoded({extended: true, limit: "5kb"}));
 app.use(express.json());
+
+// --- General IP-Based Rate Limiter ---
+const generalLimiter = rateLimit({ 
+    windowMs: 15 * 60 * 1000, 
+    limit: 100, 
+    message: 'Too many requests from this IP, please try again after 15 minutes.',
+    standardHeaders: 'draft-7', 
+	legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    // prefix if your Redis instance is shared
+    keyGenerator: (req) => {
+        console.log('IP Key Generator - Client IP:', ipKeyGenerator(req).ip);
+        return `rate-limit-ip:${ipKeyGenerator(req).ip}`;
+    },
+    store: new RedisStore({
+        sendCommand: (...args) => redisClient.sendCommand(args), // <-- Connect store to your client
+    }), // Configure RedisStore here for distributed environments
+});
+
+app.use(generalLimiter);
 
 // Service URLs 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL;
@@ -32,10 +61,8 @@ if (!AUTH_SERVICE_URL || !DATA_SERVICE_URL) {
     process.exit(1); // Exit if essential config is missing
 }
 
-console.log(`Auth Service URL: ${AUTH_SERVICE_URL}`);
-console.log(`Data Service URL: ${DATA_SERVICE_URL}`);
-
-
+// console.log(`Auth Service URL: ${AUTH_SERVICE_URL}`);
+// console.log(`Data Service URL: ${DATA_SERVICE_URL}`);
 
 // --- Helper Function for Logging ---
 const logProvider = (provider) => {
@@ -47,156 +74,102 @@ const logProvider = (provider) => {
     };
 };
 
+
 // --- Common Proxy Options ---
 const commonProxyOptions = {
     changeOrigin: true,
-    logLevel: 'debug', // Use 'debug' for detailed HPM logs via Winston
-    logProvider: logProvider, // Use Winston logger
-    onProxyReq: fixRequestBody, // Add this to handle proxied POST/PUT/PATCH requests correctly
-    onError: (err, req, res) => { // Custom error handling
-        logger.error(`[HPM Proxy Error] ${err.message}`, { url: req.originalUrl, target: err.target, code: err.code });
-        console.error(`[HPM Proxy Error] ${err.message}`);
-        // Avoid sending HPM's default error page
-        if (!res.headersSent) {
-             res.status(503).json({ // Service Unavailable
-                 success: false,
-                 message: 'The service is temporarily unavailable. Please try again later.'
-             });
+    // logger:console,
+    logProvider,
+    on:{
+
+        proxyReq: (proxyReq, req, res) => {
+            // console.log('[HPM onProxyReq] req.user object:', req.user);
+            if (req.user) {
+                proxyReq.setHeader('X-User-ID', req.user._id);
+                logger.debug(`[HPM Set Header] X-User-ID: ${req.user._id} for ${req.originalUrl}`);
+            } else {
+                logger.warn(`[HPM Set Header] No req.user found for ${req.originalUrl}`);
+            }
+            fixRequestBody(proxyReq, req, res, {}); 
+        },
+
+        error: (err, req, res) => { // Custom error handling
+            logger.error(`[HPM Proxy Error] ${err.message}`, { url: req.originalUrl, target: err.target, code: err.code });
+            console.error(`[HPM Proxy Error] ${err.message}`);
+            // Avoid sending HPM's default error page
+            if (!res.headersSent) {
+                res.status(503).json({ // Service Unavailable
+                    success: false,
+                    message: 'The service is temporarily unavailable. Please try again later.'
+                });
+            }
         }
     }
 };
 
+
 // --- Create Proxy Instances ---
 
 // Proxy for the Authentication Service
-// const authServiceProxy = createProxyMiddleware({
-//     target: AUTH_SERVICE_URL,
-//     changeOrigin: true,
-// });
-
 const authServiceProxy = createProxyMiddleware({
-    target: AUTH_SERVICE_URL,
-    changeOrigin: true,
-    pathRewrite: (path, req) => {
-      // This function ensures the '/api/v1/users' prefix is always present
-    //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
-    //   const newPath = '/api/v1/users' + originalPathWithoutPrefix;
-    const newPath = '/api/v1/users' + path;
-      console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); // Log rewrite
-      logger.debug(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
-      return newPath; // Return the full path expected by the auth service
-    }
+  ...commonProxyOptions,
+  target: AUTH_SERVICE_URL,
+  pathRewrite: (path, req) => {
+    const newPath = req.originalUrl;
+    console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
+    logger.debug(
+      `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
+    );
+    return newPath; // Return the full path expected by the auth service
+  },
 });
+
 
 // Proxy for the Data Service
 const dataServiceProxy = createProxyMiddleware({
-    ...commonProxyOptions,
-    target: DATA_SERVICE_URL,
-    changeOrigin: true,
-    pathRewrite: (path, req) => {
-      // This function ensures the '/api/v1/users' prefix is always present
-    //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
-    //   const newPath = '/api/v1/users' + originalPathWithoutPrefix;
-    const newPath = '/api/v1/coins' + path;
-      console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); // Log rewrite
-      logger.debug(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
-      return newPath; // Return the full path expected by the auth service
-    }
+  ...commonProxyOptions,
+  target: DATA_SERVICE_URL,
+  pathRewrite: (path, req) => {
+    const newPath = req.originalUrl;
+    console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
+    logger.debug(
+      `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
+    );
+    return newPath;
+  },
 });
 
-const publicAnalyticsProxy = createProxyMiddleware({
-    ...commonProxyOptions,
-    target: DATA_SERVICE_URL,
-    changeOrigin: true,
-    pathRewrite: (path, req) => {
-        const newPath = '/api/v1/analytics' + path;
-        console.log(`[HPM Analytics PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
-        logger.debug(`[HPM Analytics PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
-        return newPath;
-    }
-});
-
-// Proxy for the Data Service that requires authentication
-// const securedDataServiceProxy = createProxyMiddleware({
-//     target: DATA_SERVICE_URL,
-//     changeOrigin: true,
-//     // logLevel: 'debug',
-//     pathRewrite: (path, req) => {
-//       // This function ensures the '/api/v1/users' prefix is always present
-//     //   const originalPathWithoutPrefix = path.replace('/api/v1/users', ''); // Get the part after /api/v1/users
-//     //   const newPath = '/api/v1/users' + originalPathWithoutPrefix;
-//     const newPath = '/api/v1/watchlist' + path;
-//       console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); // Log rewrite
-//       logger.debug(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
-//       return newPath; // Return the full path expected by the auth service
-//     },
-//     onProxyReq: (proxyReq, req, res) => {
-//         // req.user is attached by your verifyJWT middleware
-//         if (req.user) {
-//             // Add the user ID as a custom header for the downstream service
-//             proxyReq.setHeader('X-User-ID', req.user._id);
-//         }
-//     }
-// });
-
-
-const securedDataServiceProxy = createProxyMiddleware({
-    target: DATA_SERVICE_URL,
-    changeOrigin: true,
-    pathRewrite: (path, req) => {
-        let newPath;
-        if (path.startsWith('/watchlist')) {
-            newPath = '/api/v1' + path;
-        } else if (path.startsWith('/portfolio')) {
-             newPath = '/api/v1' + path; 
-        } else {
-            newPath = path; 
-        }
-        console.log(`[HPM Secured PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
-        logger.debug(`[HPM Secured PathRewrite] Original: ${path} => Rewritten: ${newPath}`);
-        return newPath;
-    },
-    onProxyReq: (proxyReq, req, res) => {
-        if (req.user) {
-            proxyReq.setHeader('X-User-ID', req.user._id);
-            logger.debug(`[HPM Set Header] X-User-ID: ${req.user._id} for ${req.originalUrl}`);
-        } else {
-             logger.warn(`[HPM Set Header] No req.user found for ${req.originalUrl}`);
-        }
-    }
-});
 
 
 // --- Route Definitions ---
 
-// Express matches routes in order. The most specific (secured) routes first.
-
 // Secured Data Routes
-app.use('/api/v1/watchlist', verifyJWT, securedDataServiceProxy);
-app.use('/api/v1/portfolio', verifyJWT, securedDataServiceProxy);
+app.use('/api/v1/watchlist', verifyJWT, userRateLimiter, dataServiceProxy);
+app.use('/api/v1/portfolio', verifyJWT, userRateLimiter, dataServiceProxy);
+
 
 // Secured User Account Routes
-// app.use(
-//     [
-//         '/api/v1/users/logout',
-//         '/api/v1/users/change-password',
-//         '/api/v1/users/current-user',
-//         '/api/v1/users/update-account',
-//         '/api/v1/users/update-avatar'
-//     ],
-//     verifyJWT,       // Step 1: Verify the access token
-//     authServiceProxy // Step 2: Proxy to the auth service
-// );
+app.use(
+    [
+        '/api/v1/users/logout',
+        '/api/v1/users/change-password',
+        '/api/v1/users/current-user',
+        '/api/v1/users/update-account',
+        '/api/v1/users/update-avatar'
+    ],
+    verifyJWT,       
+    authServiceProxy
+);
+
 
 // Public User Auth Routes
-// Catches all other routes under /api/v1/users (login, register, refresh, google, etc.)
-app.use('/api/v1/users', authServiceProxy);
+app.use('/api/v1/users', userRateLimiter, authServiceProxy);
 
 // Public Coin Data Routes
-app.use('/api/v1/coins', dataServiceProxy);
+app.use('/api/v1/coins', userRateLimiter, dataServiceProxy);
 
 // Public Analytics Routes
-app.use('/api/v1/analytics', publicAnalyticsProxy);
+app.use('/api/v1/analytics', userRateLimiter, dataServiceProxy);
 
 
 // --- Global Error Handler ---

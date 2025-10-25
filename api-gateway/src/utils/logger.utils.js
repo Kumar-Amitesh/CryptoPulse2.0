@@ -6,7 +6,7 @@ const customLogFormat = format.printf(({level, message, timestamp}) => {
 })
 
 const logger = createLogger({
-    level:"http",
+    level:"debug",
     format: format.combine(
         format.timestamp(),
         customLogFormat,

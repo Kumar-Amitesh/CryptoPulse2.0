@@ -21,6 +21,17 @@ const getWatchlist = asyncHandler(async (req, res) => {
   // const userId = req.user._id; 
   const userId = getUserIdFromHeader(req);
 
+  // redisClient.exists returns a Promise, not a direct boolean
+  // statement is checking the Promise object itself, which is always "truthy,"
+  if(await redisClient.exists(`watchlist:${userId}`)) {
+    const cachedData = await redisClient.get(`watchlist:${userId}`);
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, JSON.parse(cachedData), 'Watchlist fetched successfully from cache')
+      );
+  }
+
   const watchlistItems = await Watchlist.find({ user: userId }).select('coinId');
 
   if (!watchlistItems || watchlistItems.length === 0) {
@@ -38,6 +49,8 @@ const getWatchlist = asyncHandler(async (req, res) => {
   const coinData = coinDataJsonList
     .filter((data) => data !== null) 
     .map((data) => JSON.parse(data));
+
+  redisClient.set(`watchlist:${userId}`, JSON.stringify(coinData), { EX: 1800 }); // Cache for 30 minutes
 
   return res
     .status(200)
@@ -65,6 +78,10 @@ const addToWatchlist = asyncHandler(async (req, res) => {
     user: userId,
     coinId: coinId,
   });
+
+  if(redisClient.exists(`watchlist:${userId}`)) { {
+    redisClient.del(`watchlist:${userId}`);
+  } }
 
   return res
     .status(201)
