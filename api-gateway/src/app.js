@@ -11,12 +11,24 @@ import { RedisStore } from 'rate-limit-redis'
 import { client as redisClient } from './config/redis.config.js';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
+// --- Apollo Server Imports ---
+import { ApolloServer } from '@apollo/server';
+// import { expressMiddleware } from '@apollo/server/express5';
+import { expressMiddleware } from '@as-integrations/express5';
+
+import http from 'http';
+
+// --- GraphQL Schema/Resolvers ---
+import typeDefs from './graphql/schema.graphql.js';
+import resolvers from './graphql/resolvers.graphql.js';
+
 
 dotenv.config({
     path:'../../.env' 
 });
 
 const app = express();
+const httpServer = http.createServer(app); // Wrap express app for potential Apollo plugins
 
 // Trust the first proxy in front of your app
 // This is a common setting for many hosting providers.
@@ -160,6 +172,40 @@ const websocketServiceProxy = createProxyMiddleware({
 });
 
 
+// --- Apollo Server Setup ---
+const apolloServer = new ApolloServer({
+    typeDefs,
+    resolvers,
+    // Add introspection: true in development if needed, but disable in production
+    // introspection: process.env.NODE_ENV !== 'production',
+    introspection: true,
+});
+
+// Start the Apollo Server 
+async function startApolloServer() {
+    try {
+        await apolloServer.start();
+        logger.info('Apollo Server started successfully.');
+
+        app.use(
+            '/graphql',
+            verifyJWT,
+            userRateLimiter,
+            expressMiddleware(apolloServer, {
+                context: async ({ req, res }) => ({
+                    user: req.user,
+                    req,
+                    res
+                }),
+            }),
+        );
+
+        console.log('Apollo Server /graphql endpoint is set up.');
+    } catch (err) {
+        logger.error('Error starting Apollo Server:', err);
+        console.error('Error starting Apollo Server:', err);
+    }
+}
 
 // --- Route Definitions ---
 
@@ -209,6 +255,10 @@ app.use((err, req, res, next) => {
         errors: err.errors || []
     });
 });
+
+
+await startApolloServer();
+
 
 export default app;
 export { websocketServiceProxy };
