@@ -20,6 +20,7 @@ const app = express();
 
 // Trust the first proxy in front of your app
 // This is a common setting for many hosting providers.
+// If this gateway runs behind a load balancer, add app.set('trust proxy', 1) so IP detection works correctly.
 app.set('trust proxy', 1);
 
 
@@ -53,8 +54,9 @@ app.use(generalLimiter);
 // Service URLs 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL;
 const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL;
+const WEBSOCKET_SERVICE_URL = process.env.WEBSOCKET_SERVICE_URL;
 
-if (!AUTH_SERVICE_URL || !DATA_SERVICE_URL) {
+if (!AUTH_SERVICE_URL || !DATA_SERVICE_URL || !WEBSOCKET_SERVICE_URL) {
     const errorMsg = "FATAL ERROR: AUTH_SERVICE_URL or DATA_SERVICE_URL is not defined in environment variables.";
     logger.error(errorMsg);
     console.error(errorMsg);
@@ -140,8 +142,30 @@ const dataServiceProxy = createProxyMiddleware({
 });
 
 
+// Proxy for the WebSocket Service (Handles HTTP polling and WS upgrades)
+const websocketServiceProxy = createProxyMiddleware({
+    ...commonProxyOptions,
+    target: WEBSOCKET_SERVICE_URL,
+    ws: true, // IMPORTANT: Enable WebSocket proxying
+    // No pathRewrite needed if websocket service listens on root for socket.io
+    pathRewrite: { '^/socket.io': '/socket.io' }, 
+     on: { // Keep specific handlers if necessary, remove X-User-ID setting for WS proxy
+        proxyReqWs: (proxyReq, req, socket, options, head) => {
+           logger.debug(`[HPM WS ProxyReq] Upgrading connection for ${req.url}`);
+        //    console.log(req)
+        },
+        error: commonProxyOptions.on.error, // Reuse common error handler
+         // proxyReq: (proxyReq, req, res) => { /* remove X-User-ID for WS */} // Don't set X-User-ID via HTTP header for WS
+    }
+});
+
+
 
 // --- Route Definitions ---
+
+// Add WebSocket Proxy Route
+// The path '/socket.io/' is the default used by socket.io client
+app.use('/socket.io/', websocketServiceProxy);
 
 // Secured Data Routes
 app.use('/api/v1/watchlist', verifyJWT, userRateLimiter, dataServiceProxy);
@@ -187,3 +211,4 @@ app.use((err, req, res, next) => {
 });
 
 export default app;
+export { websocketServiceProxy };

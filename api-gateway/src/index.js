@@ -4,6 +4,7 @@ import connectDB from './config/db.config.js';
 import logger from './utils/logger.utils.js';
 // import { client as redisClient } from './config/redis.config.js';
 import mongoose from 'mongoose';
+import { websocketServiceProxy } from './app.js';
 
 dotenv.config({
     path:'../../.env'
@@ -19,6 +20,14 @@ connectDB()
         logger.info(`Server is running on port ${PORT}`);
         console.log(`Server is running on port ${PORT}`);
     })
+
+    // Add the upgrade handler
+    if (websocketServiceProxy && websocketServiceProxy.upgrade) {
+       server.on('upgrade', websocketServiceProxy.upgrade);
+       logger.info('WebSocket upgrade handler attached to the server.');
+    } else {
+       logger.error('Could not attach WebSocket upgrade handler!');
+    }
 
     server.on('error', (err) => {
         logger.error(`Server error: ${err.message}`);

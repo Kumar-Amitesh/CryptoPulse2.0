@@ -1,0 +1,1 @@
+export const REDIS_COIN_UPDATE_CHANNEL = "coin_updates"; // Channel to listen for updates

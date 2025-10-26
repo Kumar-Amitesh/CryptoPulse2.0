@@ -1,7 +1,7 @@
 import Watchlist from '../models/WatchList.models.js'; 
 import api from '../utils/axiosInstance.utils.js';
 import { client as redisClient } from '../config/redis.config.js'; 
-import { COINS_PER_PAGE, WATCHLIST_BATCH_SIZE } from '../constants.js'; 
+import { COINS_PER_PAGE, WATCHLIST_BATCH_SIZE, REDIS_COIN_UPDATE_CHANNEL } from '../constants.js'; 
 import PriceSnapshot from '../models/PriceSnapshot.models.js';
 import logger from '../utils/logger.utils.js';
 
@@ -70,6 +70,26 @@ const cacheCoinsData = async (allCoinData) => {
         console.log(
             `Successfully cached ${allCoinData.length} individual coins and 2 page keys.`
         );
+        // --- Publishing Updates ---
+        if (allCoinData.length > 0 && redisClient.isReady) {
+            try {
+                const publishPromises = allCoinData.map(coin => {
+                    const message = JSON.stringify({
+                        coinId: coin.id,
+                        data: coin 
+                    });
+                    return redisClient.publish(REDIS_COIN_UPDATE_CHANNEL, message);
+                });
+                const results = await Promise.all(publishPromises);
+                const successfulPublishes = results.reduce((sum, count) => sum + count, 0); // PUBLISH returns number of clients reached
+                logger.info(`WS-PUB: Published updates for ${allCoinData.length} coins to ${successfulPublishes} subscribers on channel '${REDIS_COIN_UPDATE_CHANNEL}'.`);
+                console.log(`WS-PUB: Published updates for ${allCoinData.length} coins to channel '${REDIS_COIN_UPDATE_CHANNEL}'.`);
+
+            } catch (publishError) {
+                logger.error(`WS-PUB: Error publishing coin updates to Redis channel '${REDIS_COIN_UPDATE_CHANNEL}':`, publishError);
+                console.error(`WS-PUB: Error publishing coin updates to Redis:`, publishError);
+            }
+        }
     } catch (err) {
         console.error("Error executing Redis pipeline:", err);
     }
