@@ -375,7 +375,7 @@ const refreshAccessToken = asyncHandler(async(req,res,next)=>{
     try{
         const decodedToken = jwt.verify(incomingRefreshToken,process.env.REFRESH_TOKEN_SECRET)
 
-        const user = await User.findById(decodedToken?._id)
+        const user = await User.findById(decodedToken?._id).select('+refreshToken')
 
         if(!user){
             throw new ApiError(401,'Invalid Refresh Token')
@@ -418,7 +418,7 @@ const refreshAccessToken = asyncHandler(async(req,res,next)=>{
 const chnageCurrentPassword = asyncHandler(async(req,res,next)=>{
     const {oldPassword, newPassword} = req.body
 
-    const user = await User.findById(req.user?._id)
+    const user = await User.findById(req.user?._id).select('+password')
 
     if(!user){
         throw new ApiError(401,'Unauthorized Request')

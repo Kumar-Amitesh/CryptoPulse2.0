@@ -3,6 +3,7 @@ import ApiError from '../utils/ApiError.utils.js';
 import ApiResponse from '../utils/ApiResponse.utils.js';
 import logger from '../utils/logger.utils.js';
 import { client as redisClient } from '../config/redis.config.js';
+import PriceSnapshot from '../models/PriceSnapshot.models.js';
 
 /**
  * Gets the paginated list of coins for the homepage.

@@ -2,6 +2,8 @@ import app from './app.js';
 import dotenv from 'dotenv';
 import connectDB from './config/db.config.js';
 import logger from './utils/logger.utils.js';
+import mongoose from 'mongoose';
+import { client as redisClient } from './config/redis.config.js';
 
 dotenv.config({
     path:'../../.env'

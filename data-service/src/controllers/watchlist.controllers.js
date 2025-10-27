@@ -108,7 +108,7 @@ const addToWatchlist = asyncHandler(async (req, res) => {
 const removeFromWatchlist = asyncHandler(async (req, res) => {
   // const userId = req.user._id;
   const userId = getUserIdFromHeader(req);
-  const { id: coinId } = req.params; 
+  const { coinId } = req.params; 
 
   const deletedItem = await Watchlist.findOneAndDelete({
     user: userId,
