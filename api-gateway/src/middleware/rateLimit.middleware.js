@@ -1,49 +1,27 @@
-// import { createClient } from 'redis';
 import { client as redisClient } from '../config/redis.config.js';
 import asyncHandler from '../utils/asyncHandler.utils.js';
 import ApiError from '../utils/ApiError.utils.js';
 import logger from '../utils/logger.utils.js';
 import dotenv from 'dotenv';
 
-dotenv.config({ path: '../../.env' }); // Ensure .env is loaded
-
-// --- Redis Client (Consider creating a shared Redis config/client) ---
-// Note: This creates a separate client connection for the middleware.
-// For better resource management, you might want to import a shared client instance.
-// let redisClient;
-// try {
-//     redisClient = createClient({
-//         // Add your Redis connection details from .env here if needed
-//         // e.g., username, password, socket: { host, port }
-//         // Ensure error handling and connection logic as in your other redis.config.js files
-//     });
-//     redisClient.on('error', (err) => logger.error('Rate Limit Redis Client Error:', err));
-//     await redisClient.connect();
-//     logger.info('Rate Limit Redis Client Connected.');
-// } catch (err) {
-//     logger.error('Failed to connect Rate Limit Redis Client:', err);
-//     // Decide how to handle this - maybe allow requests but log errors, or block?
-//     // For now, we'll let it proceed but log the error. The middleware will fail later.
-// }
-// --- End Redis Client ---
+dotenv.config({ path: '../../.env' }); 
 
 // --- Rate Limit Configuration ---
-const RATE_LIMIT_WINDOW_SECONDS = 60; // 1 minute window
+const RATE_LIMIT_WINDOW_SECONDS = 60; 
 const RATE_LIMIT_PLANS = {
     free: {
         limit: 100 // requests per window
     },
     premium: {
-        limit: 1000 // requests per window
+        limit: 1000 
     }
 };
-// --- End Configuration ---
 
 const userRateLimiter = asyncHandler(async (req, res, next) => {
     if (!redisClient || !redisClient.isReady) {
         logger.error('Rate limiter cannot connect to Redis. Allowing request.');
         // Potentially dangerous to allow all requests if Redis is down.
-        // Consider returning a 503 Service Unavailable error instead:
+        // returning a 503 Service Unavailable error instead:
         throw new ApiError(503, 'Rate limiting service unavailable.');
         // return next();
     }

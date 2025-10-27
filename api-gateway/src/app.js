@@ -16,7 +16,7 @@ import { ApolloServer } from '@apollo/server';
 // import { expressMiddleware } from '@apollo/server/express5';
 import { expressMiddleware } from '@as-integrations/express5';
 
-import http from 'http';
+// import http from 'http';
 
 // --- GraphQL Schema/Resolvers ---
 import typeDefs from './graphql/schema.graphql.js';
@@ -28,7 +28,7 @@ dotenv.config({
 });
 
 const app = express();
-const httpServer = http.createServer(app); // Wrap express app for potential Apollo plugins
+// const httpServer = http.createServer(app); // Wrap express app for potential Apollo plugins
 
 // Trust the first proxy in front of your app
 // This is a common setting for many hosting providers.
