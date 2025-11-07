@@ -6,7 +6,7 @@ services:
     restart: always
     env_file: ./.env
     ports:
-      - "3000:3000" 
+      - "3000:3000"  # comment this if using load-tester only
     depends_on:
       - auth-service
       - data-service
@@ -37,4 +37,14 @@ services:
     build: ./websocket-service
     restart: always
     env_file: ./.env
+
+  load-tester:
+    image: yamaszone/hey
+    depends_on:
+      - api-gateway
+      - auth-service
+      - data-service
+      - websocket-service
+      - worker-service
+      - scheduler-service
 
