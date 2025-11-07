@@ -48,16 +48,21 @@ const cacheCoinsData = async (allCoinData) => {
     const sortedCoins = allCoinData.sort(
         (a, b) => (a.market_cap_rank || 9999) - (b.market_cap_rank || 9999)
     );
-
-    const page1_ids = sortedCoins.slice(0, COINS_PER_PAGE).map((coin) => coin.id);
-    const page2_ids = sortedCoins
-        .slice(COINS_PER_PAGE, COINS_PER_PAGE * 2)
-        .map((coin) => coin.id);
+    
+    // get the full data for each page
+    const page1_data = sortedCoins.slice(0, COINS_PER_PAGE);
+    const page2_data = sortedCoins.slice(COINS_PER_PAGE, COINS_PER_PAGE * 2);
 
     const pipeline = redisClient.multi();
 
-    pipeline.set("page:1", JSON.stringify(page1_ids));
-    pipeline.set("page:2", JSON.stringify(page2_ids));
+    // Set the new keys with the complete JSON data
+    pipeline.set("page:1:data", JSON.stringify(page1_data));
+    pipeline.set("page:2:data", JSON.stringify(page2_data));
+
+    // remove the old page:1 and page:2 keys if they exist
+    pipeline.del("page:1");
+    pipeline.del("page:2");
+
 
     allCoinData.forEach((coin) => {
         const key = `coin:${coin.id}`;
@@ -68,9 +73,9 @@ const cacheCoinsData = async (allCoinData) => {
     try {
         await pipeline.exec();
         console.log(
-            `Successfully cached ${allCoinData.length} individual coins and 2 page keys.`
+            `Successfully cached ${allCoinData.length} individual coins and 2 page data keys.`
         );
-        // --- Publishing Updates ---
+        // Publishing Updates 
         if (allCoinData.length > 0 && redisClient.isReady) {
             try {
                 const publishPromises = allCoinData.map(coin => {

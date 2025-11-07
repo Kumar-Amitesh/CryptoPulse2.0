@@ -2,6 +2,7 @@ import axios from 'axios'
 import axiosRetry from 'axios-retry'
 import dotenv from 'dotenv'
 import Opossum from 'opossum' // Circuit breaker library
+import logger from './logger.utils.js'
 
 dotenv.config({
     path:'../../.env'

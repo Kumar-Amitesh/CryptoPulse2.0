@@ -16,30 +16,20 @@ const getPaginatedCoins = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Page must be 1 or 2');
   }
 
-  // Get the list of coin IDs for the requested page
-  const pageKey = `page:${page}`;
-  const pageIdsJson = await redisClient.get(pageKey);
 
-  if (!pageIdsJson) {
+  const pageKey = `page:${page}:data`;
+  const pageDataJson = await redisClient.get(pageKey);
+
+  if (!pageDataJson) {
     throw new ApiError(503, 'Coin data is not available yet. Please try again in a moment.');
   }
 
-  const pageIds = JSON.parse(pageIdsJson);
+  const coinData = JSON.parse(pageDataJson);
 
-  if (!pageIds || pageIds.length === 0) {
+  if (!coinData || coinData.length === 0) {
     return res.status(200).json(new ApiResponse(200, [], 'No coins found for this page.'));
   }
 
-  // Build the list of keys to fetch (e.g., ["coin:bitcoin", "coin:ethereum", ...])
-  const coinKeys = pageIds.map((id) => `coin:${id}`);
-
-  // Fetch all coin data from Redis in one go
-  const coinDataJsonList = await redisClient.mGet(coinKeys);
-
-  // Parse the data and filter out any potential nulls (if a coin key expired)
-  const coinData = coinDataJsonList
-    .filter((data) => data !== null)
-    .map((data) => JSON.parse(data));
 
   return res
     .status(200)
