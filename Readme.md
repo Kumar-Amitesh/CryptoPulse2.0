@@ -91,15 +91,15 @@ The `api-gateway` protects the application from abuse using rate limiters.
 
 This is demonstrated by the provided load test results for the unauthenticated `/api/v1/coins` endpoint, which is subject to the IP-based limiter:
 
-**Test 1: Low Concurrency (n=50, c=10)**
+**Test 1: High Concurrency (n=100, c=50)**
+  * **Command:** `docker-compose run --rm load-tester -n 100 -c 50 "http://api-gateway:3000/api/v1/coins"`
+  * **Result:** All 100 requests were successful (`[200] 100 responses`).
+  * **Analysis:** The system successfully handled a burst of 100 requests from 50 concurrent users. The average latency was ~0.24s, demonstrating good performance under load within the rate limit.
 
-  * **Result:** All 50 requests were successful (`[200] 50 responses`).
-  * **Analysis:** The request volume was within the allowed rate limit, and the system processed all requests, albeit with higher latency (Avg: 5.19s) as the services were likely warming up or fetching initial data.
-
-**Test 2: High Concurrency (n=200, c=50)**
-
-  * **Result:** All 200 requests were rejected (`[429] 200 responses`).
-  * **Analysis:** This test demonstrates the rate limiter in action. Assuming the 100-request quota was exhausted by a previous test (or the first 100 requests of this one), the gateway correctly and *efficiently* rejected all 200 requests with a `429 Too Many Requests` status. The high requests/sec (159.01) and low average latency (0.29s) show the rejections are fast, protecting the downstream services from the load.
+**Test 2: Rate Limit Test (n=200, c=50)**
+  * **Command:** `docker-compose run --rm load-tester -n 200 -c 50 "http://api-gateway:3000/api/v1/coins"`
+  * **Result:** The test received 100 successful responses (`[200] 100 responses`) and 100 rejected responses (`[429] 100 responses`).
+  * **Analysis:** This test clearly demonstrates the IP-based rate limiter (100 requests / 15 minutes) in action. The first 100 requests were processed successfully, after which the gateway correctly rejected the subsequent 100 requests with a `429 Too Many Requests` status, protecting the downstream services from the excessive load. The rejections were handled very quickly, as shown by the high overall requests/sec (349.97).
 
 ## Setup Instructions
 
@@ -178,13 +178,13 @@ This is demonstrated by the provided load test results for the unauthenticated `
       * **Load Testing:**
         The `docker-compose.yml` includes a `load-tester` service (using `yamaszone/hey`). You can run it to send traffic to the `api-gateway`.
 
-        **Test (Low Load): 50 requests, 10 concurrent**
+        **Test (High Load): 100 requests, 50 concurrent**
 
         ```bash
-        docker-compose run --rm load-tester -n 50 -c 10 "http://api-gateway:3000/api/v1/coins"
+        docker-compose run --rm load-tester -n 100 -c 50 "http://api-gateway:3000/api/v1/coins"
         ```
 
-        **Test (High Load): 200 requests, 50 concurrent (to test rate limiting)**
+        **Test (Rate Limit Test): 200 requests, 50 concurrent**
 
         ```bash
         docker-compose run --rm load-tester -n 200 -c 50 "http://api-gateway:3000/api/v1/coins"
