@@ -2,7 +2,7 @@
 
 ## Description
 
-CryptoPulse 2.0 is a comprehensive cryptocurrency tracking and portfolio management application built with a microservices architecture. It allows users to register, log in (including Google OAuth), view real-time cryptocurrency data, manage their watchlist and portfolio, and view analytics like popular coins.
+CryptoPulse is a comprehensive cryptocurrency tracking and portfolio management application built with a microservices architecture. It allows users to register, log in (including Google OAuth), view real-time cryptocurrency data, manage their watchlist and portfolio, and view analytics like popular coins.
 
 ## Architecture
 
@@ -58,7 +58,7 @@ The application follows a microservices pattern, separating concerns into distin
   * **GraphQL:** Apollo Server (@apollo/server)
   * **Authentication:** JWT (jsonwebtoken), bcrypt
   * **File Uploads:** Multer, Cloudinary
-  * **Other:** dotenv, Winston (logging), Axios (HTTP client), Opossum (circuit breaker), express-validator
+  * **Other:** dotenv, Winston (logging), Morgan (HTTP logging), Axios (HTTP client), Opossum (circuit breaker), express-validator
 
 ## Design Concepts & Performance
 
@@ -81,6 +81,10 @@ The `worker-service` communicates with the external CoinGecko API, which could b
 
   * **Retry Logic:** Using `axios-retry`, failed requests (due to network errors or 429 rate limits) are automatically retried 3 times with exponential backoff.
   * **Circuit Breaker:** Using `opossum`, if the API failure rate exceeds 50%, the circuit "opens" for 30 seconds. This stops the worker from hammering the failing API and allows it to recover, preventing cascading failures.
+
+### Microservice Security
+
+Internal communication between the API Gateway and downstream services (like the Data Service) is secured using a **Shared Secret** mechanism. The Gateway injects a custom header `X-User-Secret` (validated against `USER_SECRET_KEY`) into proxied requests. This ensures that downstream services reject direct external requests that bypass the Gateway.
 
 ### Rate Limiting (Demonstrated by Load Test)
 
@@ -124,9 +128,11 @@ This is demonstrated by the provided load test results for the unauthenticated `
           * `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
           * `CoinGecko_URL_COIN`, `CoinGecko_API_KEY`
           * `CORS_ORIGIN`
+          * `USER_SECRET_KEY` (Shared secret for inter-service communication security)
           * Service URLs (if running locally):
               * `AUTH_SERVICE_URL` (e.g., http://localhost:8001)
               * `DATA_SERVICE_URL` (e.g., http://localhost:8002)
+              * `GRAPHQL_SERVICE_URL` (e.g., http://localhost:8003)
               * `WEBSOCKET_SERVICE_URL` (e.g., http://localhost:8004)
 
 3.  **Install Dependencies:**
@@ -171,6 +177,8 @@ This is demonstrated by the provided load test results for the unauthenticated `
       * **Build and Run (with scaling):**
         Build and run all services in detached mode, scaling them as desired. The following command matches your test configuration:
 
+        **Note on Docker Volumes:** The `docker-compose.yml` file currently contains a hardcoded absolute path for the Redis volume. Before running `docker-compose up`, please update the volume path under the `redis` service to match your local file system or use a named volume.
+
         ```bash
         docker-compose up -d --build --scale api-gateway=2 --scale auth-service=2 --scale data-service=3 --scale worker-service=4 --scale scheduler-service=1 --scale websocket-service=2
         ```
@@ -194,6 +202,7 @@ This is demonstrated by the provided load test results for the unauthenticated `
 
       * The API Gateway runs on the port specified by `PORT` in your `.env` (e.g., `http://localhost:3000`).
       * The GraphQL endpoint is available at `http://localhost:<PORT>/graphql`.
+      * **GraphQL Playground:** You can explore the data graph and run queries interactively at `http://localhost:<PORT>/graphql` (via the Gateway).
       * REST endpoints are available under `/api/v1/...`.
 
 ## Services Breakdown
@@ -204,6 +213,20 @@ This is demonstrated by the provided load test results for the unauthenticated `
   * **`worker-service`:** Listens for jobs from BullMQ (scheduled by `scheduler-service`), fetches data from external APIs (CoinGecko), performs data processing, updates the Redis cache, and saves historical data to MongoDB. Includes retry and circuit breaker patterns for external API calls.
   * **`scheduler-service`:** Uses BullMQ to schedule recurring tasks (like updating coin data) that are picked up by the `worker-service`.
   * **`websocket-service`:** Manages WebSocket connections, authenticates users, and pushes real-time data updates received via Redis pub/sub from the `worker-service`.
+
+## WebSocket API
+
+The WebSocket service runs on port `8004` (or via the gateway at `/socket.io/`).
+
+* **Connection:** Requires a valid JWT token passed in the handshake auth: `{ token: "YOUR_ACCESS_TOKEN" }`.
+* **Events:**
+    * `coinUpdate`: Listen for this event to receive real-time price updates.
+        * **Payload:** `{ coinId: 'bitcoin', data: { ...coinDetails } }`
+    * `subscribeToCoin`: Emit this event with a `coinId` to request specific updates (currently implemented as a basic logger in the backend).
+
+## API Documentation
+
+A Postman collection is included in the repository (`CryptoPulse.postman_collection.json`) containing pre-configured requests for Authentication, Portfolio management, and Coin data endpoints. Import this into Postman to test the REST API immediately.
 
 ## Logging
 
