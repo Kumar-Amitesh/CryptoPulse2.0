@@ -100,6 +100,7 @@ const commonProxyOptions = {
             // console.log('[HPM onProxyReq] req.user object:', req.user);
             if (req.user) {
                 proxyReq.setHeader('X-User-ID', req.user._id);
+                proxyReq.setHeader('X-User-Secret', process.env.USER_SECRET_KEY)
                 logger.debug(`[HPM Set Header] X-User-ID: ${req.user._id} for ${req.originalUrl}`);
             } else {
                 logger.warn(`[HPM Set Header] No req.user found for ${req.originalUrl}`);

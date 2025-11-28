@@ -7,6 +7,9 @@ import logger from '../utils/logger.utils.js';
 
 const getUserIdFromHeader = (req) => {
   const userId = req.header('X-User-ID'); 
+  if(req.header('X-User-Secret')!== process.env.USER_SECRET_KEY) {
+    throw new ApiError(401, 'Unauthorized - Invalid user');
+  }
   if (!userId) {
     throw new ApiError(401, 'Unauthorized - No user ID provided');
   }
