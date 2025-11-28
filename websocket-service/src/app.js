@@ -7,6 +7,7 @@ import logger from './utils/logger.utils.js';
 import { initializeWebSocket } from './websocket/handler.websocket.js';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { client as redisClient, subscriber as redisSubscriber } from './config/redis.config.js'; 
+import morgan from 'morgan';
 
 dotenv.config({ path: '../../.env' }); 
 
@@ -17,6 +18,18 @@ app.use(cors({
     origin: process.env.CORS_ORIGIN,
     credentials: true
 }));
+
+const morganFormat = ":method :url :status :res[content-length] - :response-time ms :remote-addr :user-agent";
+
+app.use(
+  morgan(morganFormat, {
+    stream: {
+      write: (message) => {
+        logger.http(message.trim());
+      },
+    },
+  })
+);
 
 app.get('/api/v1/websocket/health', (req, res) => {
     res.status(200).json({ status: 'UP', message: 'WebSocket service is running.' });

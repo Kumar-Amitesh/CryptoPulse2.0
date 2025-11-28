@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
 import { client as redisClient } from './config/redis.config.js';
 import logger from './utils/logger.utils.js';
+import morgan from 'morgan';
 
 const app = express()
 
@@ -16,6 +17,18 @@ app.use(express.json({limit: "5kb"}))
 app.use(express.urlencoded({extended: true, limit: "5kb"}))
 app.use(express.static('public'))
 app.use(cookieParser())
+
+const morganFormat = ":method :url :status :res[content-length] - :response-time ms :remote-addr :user-agent";
+
+app.use(
+  morgan(morganFormat, {
+    stream: {
+      write: (message) => {
+        logger.http(message.trim());
+      },
+    },
+  })
+);
 
 
 // import routes

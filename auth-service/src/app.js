@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit'
 import mongoose from 'mongoose';
 import { client as redisClient } from './config/redis.config.js';
 import logger from './utils/logger.utils.js';
+import morgan from 'morgan';
 
 const app = express()
 
@@ -19,6 +20,18 @@ app.use(express.urlencoded({extended: true, limit: "5kb"}))
 app.use(express.static('public'))
 app.use(cookieParser())
 app.use(helmet())
+
+const morganFormat = ":method :url :status :res[content-length] - :response-time ms :remote-addr :user-agent";
+
+app.use(
+  morgan(morganFormat, {
+    stream: {
+      write: (message) => {
+        logger.http(message.trim());
+      },
+    },
+  })
+);
 
 const limiter = rateLimit({
     windowMs: 15*60*1000,  

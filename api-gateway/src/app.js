@@ -11,6 +11,7 @@ import { RedisStore } from 'rate-limit-redis'
 import { client as redisClient } from './config/redis.config.js';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import cacheMiddleware from './middleware/cache.middleware.js';
+import morgan from 'morgan';
 
 // --- Apollo Server Imports ---
 import { ApolloServer } from '@apollo/server';
@@ -44,6 +45,19 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.urlencoded({extended: true, limit: "5kb"}));
 app.use(express.json());
+
+const morganFormat = ":method :url :status :res[content-length] - :response-time ms :remote-addr :user-agent";
+
+app.use(
+  morgan(morganFormat, {
+    stream: {
+      write: (message) => {
+        logger.http(message.trim());
+      },
+    },
+  })
+);
+
 
 // --- General IP-Based Rate Limiter ---
 const generalLimiter = rateLimit({ 

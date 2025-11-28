@@ -10,6 +10,7 @@ import typeDefs from './schema.graphql.js';
 import resolvers from './resolvers.graphql.js';
 
 import User from './models/Users.models.js';
+import morgan from 'morgan';
 
 dotenv.config({
     path:'../../.env' 
@@ -23,6 +24,18 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+const morganFormat = ":method :url :status :res[content-length] - :response-time ms :remote-addr :user-agent";
+
+app.use(
+  morgan(morganFormat, {
+    stream: {
+      write: (message) => {
+        logger.http(message.trim());
+      },
+    },
+  })
+);
 
 // --- Apollo Server Setup ---
 const apolloServer = new ApolloServer({
