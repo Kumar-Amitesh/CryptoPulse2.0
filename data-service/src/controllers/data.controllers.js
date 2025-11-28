@@ -65,7 +65,8 @@ const getCoinById = asyncHandler(async (req, res) => {
  * @access Public
  */
 const getCoinHistory = asyncHandler(async (req, res) => {
-    const { coinId } = req.params;
+    const { coinID } = req.params;
+    const coinId = String(coinID).trim();
     const { interval = 'day', days = '30' } = req.query; // interval: 'hour' or 'day', days: number of days back
 
     let groupByFormat;
