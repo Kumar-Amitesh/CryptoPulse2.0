@@ -10,6 +10,7 @@ import userRateLimiter from './middleware/rateLimit.middleware.js';
 import { RedisStore } from 'rate-limit-redis'
 import { client as redisClient } from './config/redis.config.js';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import cacheMiddleware from './middleware/cache.middleware.js';
 
 // --- Apollo Server Imports ---
 import { ApolloServer } from '@apollo/server';
@@ -253,7 +254,7 @@ app.use(
 app.use('/api/v1/users', userRateLimiter, authServiceProxy);
 
 // Public Coin Data Routes
-app.use('/api/v1/coins', userRateLimiter, dataServiceProxy);
+app.use('/api/v1/coins', userRateLimiter, cacheMiddleware, dataServiceProxy);
 
 // Public Analytics Routes
 app.use('/api/v1/analytics', userRateLimiter, dataServiceProxy);
