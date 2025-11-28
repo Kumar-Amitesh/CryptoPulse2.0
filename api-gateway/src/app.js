@@ -66,6 +66,7 @@ app.use(generalLimiter);
 // Service URLs 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL;
 const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL;
+const GRAPHQL_SERVICE_URL = process.env.GRAPHQL_SERVICE_URL;
 const WEBSOCKET_SERVICE_URL = process.env.WEBSOCKET_SERVICE_URL;
 
 if (!AUTH_SERVICE_URL || !DATA_SERVICE_URL || !WEBSOCKET_SERVICE_URL) {
@@ -173,40 +174,54 @@ const websocketServiceProxy = createProxyMiddleware({
 });
 
 
-// --- Apollo Server Setup ---
-const apolloServer = new ApolloServer({
-    typeDefs,
-    resolvers,
-    // Add introspection: true in development if needed, but disable in production
-    // introspection: process.env.NODE_ENV !== 'production',
-    introspection: true,
+const graphqlserviceproxy = createProxyMiddleware({
+  ...commonProxyOptions,
+  target: GRAPHQL_SERVICE_URL,
+  pathRewrite: (path, req) => {
+    const newPath = req.originalUrl;
+    console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
+    logger.debug(
+      `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
+    );
+    return newPath; // Return the full path expected by the auth service
+  },
 });
 
+
+// --- Apollo Server Setup ---
+// const apolloServer = new ApolloServer({
+//     typeDefs,
+//     resolvers,
+//     // Add introspection: true in development if needed, but disable in production
+//     // introspection: process.env.NODE_ENV !== 'production',
+//     introspection: true,
+// });
+
 // Start the Apollo Server 
-async function startApolloServer() {
-    try {
-        await apolloServer.start();
-        logger.info('Apollo Server started successfully.');
+// async function startApolloServer() {
+//     try {
+//         await apolloServer.start();
+//         logger.info('Apollo Server started successfully.');
 
-        app.use(
-            '/graphql',
-            verifyJWT,
-            userRateLimiter,
-            expressMiddleware(apolloServer, {
-                context: async ({ req, res }) => ({
-                    user: req.user,
-                    req,
-                    res
-                }),
-            }),
-        );
+//         app.use(
+//             '/graphql',
+//             verifyJWT,
+//             userRateLimiter,
+//             expressMiddleware(apolloServer, {
+//                 context: async ({ req, res }) => ({
+//                     user: req.user,
+//                     req,
+//                     res
+//                 }),
+//             }),
+//         );
 
-        console.log('Apollo Server /graphql endpoint is set up.');
-    } catch (err) {
-        logger.error('Error starting Apollo Server:', err);
-        console.error('Error starting Apollo Server:', err);
-    }
-}
+//         console.log('Apollo Server /graphql endpoint is set up.');
+//     } catch (err) {
+//         logger.error('Error starting Apollo Server:', err);
+//         console.error('Error starting Apollo Server:', err);
+//     }
+// }
 
 // --- Route Definitions ---
 
@@ -217,6 +232,7 @@ app.use('/socket.io/', websocketServiceProxy);
 // Secured Data Routes
 app.use('/api/v1/watchlist', verifyJWT, userRateLimiter, dataServiceProxy);
 app.use('/api/v1/portfolio', verifyJWT, userRateLimiter, dataServiceProxy);
+app.use('/graphql', userRateLimiter, graphqlserviceproxy);
 
 
 // Secured User Account Routes
@@ -258,7 +274,7 @@ app.use((err, req, res, next) => {
 });
 
 
-await startApolloServer();
+// await startApolloServer();
 
 
 export default app;

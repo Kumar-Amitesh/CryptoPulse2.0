@@ -35,6 +35,16 @@ services:
     depends_on:
       - redis
 
+  graphql-service:
+    build: ./graphql-service
+    restart: always
+    env_file: ./.env
+    depends_on:
+      - api-gateway
+      - auth-service
+      - data-service
+      - redis
+
   worker-service:
     build: ./worker-service
     restart: always
