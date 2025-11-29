@@ -20,16 +20,24 @@ app.use(express.urlencoded({extended: true, limit: "5kb"}))
 app.use(express.static('public'))
 app.use(cookieParser())
 app.use(helmet())
+app.set("trust proxy", 1);
 
-const morganFormat = ":method :url :status :res[content-length] - :response-time ms :remote-addr :user-agent";
+morgan.token('req-id', (req) => req.header('X-Request-ID') || '-');
+morgan.token('remote-addr', (req) => req.ip || req.connection?.remoteAddress || '-');
+
+const morganFormat = ':req-id :remote-addr :method :url :status :res[content-length] - :response-time ms :user-agent';
 
 app.use(
   morgan(morganFormat, {
     stream: {
       write: (message) => {
-        logger.http(message.trim());
+        // Send morgan output to your structured logger at http level
+        if (logger && typeof logger.http === "function")
+          logger.http(message.trim());
+        else console.info(message.trim());
       },
     },
+    skip: (req) => req.path === "/metrics", // skip noisy endpoints
   })
 );
 

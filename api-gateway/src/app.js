@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import { v4 as uuid } from "uuid";
 // fixRequestBody ensures proxied requests keep a correct body (especially for non-GET methods and certain content-types).
 import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
 import dotenv from 'dotenv';
@@ -14,15 +15,15 @@ import cacheMiddleware from './middleware/cache.middleware.js';
 import morgan from 'morgan';
 
 // --- Apollo Server Imports ---
-import { ApolloServer } from '@apollo/server';
+// import { ApolloServer } from '@apollo/server';
 // import { expressMiddleware } from '@apollo/server/express5';
-import { expressMiddleware } from '@as-integrations/express5';
+// import { expressMiddleware } from '@as-integrations/express5';
 
 // import http from 'http';
 
 // --- GraphQL Schema/Resolvers ---
-import typeDefs from './graphql/schema.graphql.js';
-import resolvers from './graphql/resolvers.graphql.js';
+// import typeDefs from './graphql/schema.graphql.js';
+// import resolvers from './graphql/resolvers.graphql.js';
 
 
 dotenv.config({
@@ -30,42 +31,87 @@ dotenv.config({
 });
 
 const app = express();
-// const httpServer = http.createServer(app); // Wrap express app for potential Apollo plugins
 
 // Trust the first proxy in front of your app
 // This is a common setting for many hosting providers.
 // If this gateway runs behind a load balancer, add app.set('trust proxy', 1) so IP detection works correctly.
-app.set('trust proxy', 1);
-
-
-app.use(cors({
-    origin: process.env.CORS_ORIGIN,
-    credentials: true
-}));
+if (process.env.TRUST_PROXY) {
+  // allow values: 'true' | 'false' | number string
+  if (process.env.TRUST_PROXY === "true") app.set("trust proxy", true);
+  else if (process.env.TRUST_PROXY === "false") app.set("trust proxy", false);
+  else app.set("trust proxy", Number(process.env.TRUST_PROXY));
+} else {
+  // Safe default for many hosting providers
+  app.set("trust proxy", 1);
+}
+// app.set("trust proxy", 1);
+app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
 app.use(cookieParser());
-app.use(express.urlencoded({extended: true, limit: "5kb"}));
-app.use(express.json());
+app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_BODY_LIMIT || '100kb' }));
+app.use(express.json({ limit: process.env.REQUEST_BODY_LIMIT || '100kb' }));
 
-const morganFormat = ":method :url :status :res[content-length] - :response-time ms :remote-addr :user-agent";
+// --- Request ID middleware (for correlation across services) ---
+app.use((req, res, next) => {
+  // Allow upstream proxy to pass an existing request id
+  const existing = req.headers["x-request-id"] || req.headers["x_correlation_id"];
+  req.id = existing || uuid();
+  res.setHeader("X-Request-ID", req.id);
+  // attach to logger default meta if your logger supports it
+  // if (logger && typeof logger.defaultMeta === "object")
+  //   logger.defaultMeta.reqId = req.id;
+  next();
+});
+
+// --- Morgan setup: include req-id token and pipe to your logger ---
+morgan.token('req-id', (req) => req.id || '-');
+morgan.token('remote-addr', (req) => req.ip || req.connection?.remoteAddress || '-');
+
+const morganFormat = ':req-id :remote-addr :method :url :status :res[content-length] - :response-time ms :user-agent';
 
 app.use(
   morgan(morganFormat, {
     stream: {
       write: (message) => {
-        logger.http(message.trim());
+        // Send morgan output to your structured logger at http level
+        if (logger && typeof logger.http === "function")
+          logger.http(message.trim());
+        else console.info(message.trim());
       },
     },
+    skip: (req) => req.path === "/metrics", // skip noisy endpoints
   })
 );
+
+// --- Response logging middleware for structured request lifecycle logs ---
+app.use((req, res, next) => {
+  const start = Date.now();
+  // capture end of response
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    const entry = {
+      reqId: req.id,
+      method: req.method,
+      url: req.originalUrl || req.url,
+      status: res.statusCode,
+      durationMs: duration,
+      contentLength: res.getHeader("Content-Length") || 0,
+      user: req.user ? { id: req.user._id } : undefined,
+    };
+    if (res.statusCode >= 500) logger.error("request_finished", entry);
+    else if (res.statusCode >= 400) logger.warn("request_finished", entry);
+    else logger.info("request_finished", entry);
+  });
+  next();
+});
 
 
 // --- General IP-Based Rate Limiter ---
 const generalLimiter = rateLimit({ 
-    windowMs: 15 * 60 * 1000, 
-    limit: 100, 
+    windowMs: Number(process.env.RATE_WINDOW_MS) || 15 * 60 * 1000,
+    max: Number(process.env.RATE_MAX) || 100,
     message: 'Too many requests from this IP, please try again after 15 minutes.',
     standardHeaders: 'draft-7', 
-	legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+	  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
     // prefix if your Redis instance is shared
     keyGenerator: (req) => {
         console.log('IP Key Generator - Client IP:', ipKeyGenerator(req).ip);
@@ -84,11 +130,11 @@ const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL;
 const GRAPHQL_SERVICE_URL = process.env.GRAPHQL_SERVICE_URL;
 const WEBSOCKET_SERVICE_URL = process.env.WEBSOCKET_SERVICE_URL;
 
-if (!AUTH_SERVICE_URL || !DATA_SERVICE_URL || !WEBSOCKET_SERVICE_URL) {
+if (!AUTH_SERVICE_URL || !DATA_SERVICE_URL || !WEBSOCKET_SERVICE_URL || !GRAPHQL_SERVICE_URL) {
     const errorMsg = "FATAL ERROR: AUTH_SERVICE_URL or DATA_SERVICE_URL is not defined in environment variables.";
     logger.error(errorMsg);
     console.error(errorMsg);
-    process.exit(1); // Exit if essential config is missing
+    process.exit(1); 
 }
 
 // console.log(`Auth Service URL: ${AUTH_SERVICE_URL}`);
@@ -108,24 +154,45 @@ const logProvider = (provider) => {
 // --- Common Proxy Options ---
 const commonProxyOptions = {
     changeOrigin: true,
+    xfwd: true, // add x-forwarded-* headers
     // logger:console,
+    preserveHeaderKeyCase: true,
     logProvider,
     on:{
 
         proxyReq: (proxyReq, req, res) => {
             // console.log('[HPM onProxyReq] req.user object:', req.user);
+            // Add the request id so downstream services can correlate logs
+            if (req.id) proxyReq.setHeader('X-Request-ID', req.id);
+            proxyReq.setHeader('X-User-Secret', process.env.USER_SECRET_KEY);
             if (req.user) {
                 proxyReq.setHeader('X-User-ID', req.user._id);
-                proxyReq.setHeader('X-User-Secret', process.env.USER_SECRET_KEY)
                 logger.debug(`[HPM Set Header] X-User-ID: ${req.user._id} for ${req.originalUrl}`);
             } else {
                 logger.warn(`[HPM Set Header] No req.user found for ${req.originalUrl}`);
             }
-            fixRequestBody(proxyReq, req, res, {}); 
+            try {
+              fixRequestBody(proxyReq, req, res, {});
+            } catch (err) {
+              logger.warn("fixRequestBody failed", {
+                err: err?.message,
+                path: req.originalUrl,
+              });
+            } 
+        },
+
+        // called when the proxy receives the response from the target
+        proxyRes: (proxyRes, req, res) => {
+          // you can capture headers, status codes here
+          logger.debug('proxy_response', {
+            reqId: req.id,
+            url: req.originalUrl,
+            targetStatus: proxyRes.statusCode,
+          });
         },
 
         error: (err, req, res) => { // Custom error handling
-            logger.error(`[HPM Proxy Error] ${err.message}`, { url: req.originalUrl, target: err.target, code: err.code });
+            logger.error('proxy_error', { message: err?.message, reqId: req.id, url: req.originalUrl });
             console.error(`[HPM Proxy Error] ${err.message}`);
             // Avoid sending HPM's default error page
             if (!res.headersSent) {
@@ -140,68 +207,86 @@ const commonProxyOptions = {
 
 
 // --- Create Proxy Instances ---
+const makeProxy = (target, opts = {}) => createProxyMiddleware({ ...commonProxyOptions, target, ...opts });
 
 // Proxy for the Authentication Service
-const authServiceProxy = createProxyMiddleware({
-  ...commonProxyOptions,
-  target: AUTH_SERVICE_URL,
-  pathRewrite: (path, req) => {
-    const newPath = req.originalUrl;
-    console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
-    logger.debug(
-      `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
-    );
-    return newPath; // Return the full path expected by the auth service
-  },
+// const authServiceProxy = createProxyMiddleware({
+//   ...commonProxyOptions,
+//   target: AUTH_SERVICE_URL,
+//   pathRewrite: (path, req) => {
+//     const newPath = req.originalUrl;
+//     console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
+//     logger.debug(
+//       `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
+//     );
+//     return newPath; // Return the full path expected by the auth service
+//   },
+// });
+const authServiceProxy = makeProxy(AUTH_SERVICE_URL, {
+  pathRewrite: (path, req) => req.originalUrl || path,
 });
 
-
 // Proxy for the Data Service
-const dataServiceProxy = createProxyMiddleware({
-  ...commonProxyOptions,
-  target: DATA_SERVICE_URL,
-  pathRewrite: (path, req) => {
-    const newPath = req.originalUrl;
-    console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
-    logger.debug(
-      `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
-    );
-    return newPath;
-  },
+// const dataServiceProxy = createProxyMiddleware({
+//   ...commonProxyOptions,
+//   target: DATA_SERVICE_URL,
+//   pathRewrite: (path, req) => {
+//     const newPath = req.originalUrl;
+//     console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
+//     logger.debug(
+//       `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
+//     );
+//     return newPath;
+//   },
+// });
+const dataServiceProxy = makeProxy(DATA_SERVICE_URL, {
+  pathRewrite: (path, req) => req.originalUrl || path,
 });
 
 
 // Proxy for the WebSocket Service (Handles HTTP polling and WS upgrades)
-const websocketServiceProxy = createProxyMiddleware({
-    ...commonProxyOptions,
-    target: WEBSOCKET_SERVICE_URL,
-    ws: true, // IMPORTANT: Enable WebSocket proxying
-    // No pathRewrite needed if websocket service listens on root for socket.io
-    pathRewrite: { '^/socket.io': '/socket.io' }, 
-     on: { // Keep specific handlers if necessary, remove X-User-ID setting for WS proxy
-        proxyReqWs: (proxyReq, req, socket, options, head) => {
-           logger.debug(`[HPM WS ProxyReq] Upgrading connection for ${req.url}`);
-        //    console.log(req)
-        },
-        error: commonProxyOptions.on.error, // Reuse common error handler
-         // proxyReq: (proxyReq, req, res) => { /* remove X-User-ID for WS */} // Don't set X-User-ID via HTTP header for WS
-    }
-});
-
-
-const graphqlserviceproxy = createProxyMiddleware({
-  ...commonProxyOptions,
-  target: GRAPHQL_SERVICE_URL,
-  pathRewrite: (path, req) => {
-    const newPath = req.originalUrl;
-    console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
-    logger.debug(
-      `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
-    );
-    return newPath; // Return the full path expected by the auth service
+// const websocketServiceProxy = createProxyMiddleware({
+//     ...commonProxyOptions,
+//     target: WEBSOCKET_SERVICE_URL,
+//     ws: true, // IMPORTANT: Enable WebSocket proxying
+//     // No pathRewrite needed if websocket service listens on root for socket.io
+//     pathRewrite: { '^/socket.io': '/socket.io' }, 
+//      on: { // Keep specific handlers if necessary, remove X-User-ID setting for WS proxy
+//         proxyReqWs: (proxyReq, req, socket, options, head) => {
+//            logger.debug(`[HPM WS ProxyReq] Upgrading connection for ${req.url}`);
+//         //    console.log(req)
+//         },
+//         error: commonProxyOptions.on.error, // Reuse common error handler
+//          // proxyReq: (proxyReq, req, res) => { /* remove X-User-ID for WS */} // Don't set X-User-ID via HTTP header for WS
+//     }
+// });
+const websocketServiceProxy = makeProxy(WEBSOCKET_SERVICE_URL, {
+  ws: true,
+  pathRewrite: { "^/socket.io": "/socket.io" },
+  on: {
+    proxyReqWs: (proxyReq, req, socket, options, head) => {
+      logger.debug("ws_upgrade", { reqId: req.id, url: req.url });
+    },
+    // reuse common error handler via function pointer
+    error: commonProxyOptions.on.error,
   },
 });
 
+// const graphqlserviceproxy = createProxyMiddleware({
+//   ...commonProxyOptions,
+//   target: GRAPHQL_SERVICE_URL,
+//   pathRewrite: (path, req) => {
+//     const newPath = req.originalUrl;
+//     console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
+//     logger.debug(
+//       `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
+//     );
+//     return newPath; // Return the full path expected by the auth service
+//   },
+// });
+const graphqlServiceProxy = makeProxy(GRAPHQL_SERVICE_URL, {
+  pathRewrite: (path, req) => req.originalUrl || path,
+});
 
 // --- Apollo Server Setup ---
 // const apolloServer = new ApolloServer({
@@ -247,7 +332,7 @@ app.use('/socket.io/', websocketServiceProxy);
 // Secured Data Routes
 app.use('/api/v1/watchlist', verifyJWT, userRateLimiter, dataServiceProxy);
 app.use('/api/v1/portfolio', verifyJWT, userRateLimiter, dataServiceProxy);
-app.use('/graphql', userRateLimiter, graphqlserviceproxy);
+app.use('/graphql', userRateLimiter, graphqlServiceProxy);
 
 
 // Secured User Account Routes
@@ -274,16 +359,32 @@ app.use('/api/v1/coins', userRateLimiter, cacheMiddleware, dataServiceProxy);
 app.use('/api/v1/analytics', userRateLimiter, dataServiceProxy);
 
 
+// --- Healthcheck and metrics endpoints ---
+app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: Date.now(), reqId: req.id }));
+
+
+// metrics endpoint is reserved for Prometheus scraping; keep it lightweight
+app.get("/metrics", (req, res) => {
+  // return basic metrics or integrate prom-client
+  res.set("Content-Type", "text/plain");
+  res.send(
+    "# HELP process_uptime_seconds Process uptime in seconds\n# TYPE process_uptime_seconds gauge\nprocess_uptime_seconds " +
+      process.uptime()
+  );
+});
+
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
     const statusCode = err.statusCode || 500;
     const message = err.message || 'Internal Server Error';
-    logger.error(`[Gateway Error] ${statusCode} - ${message} - ${req.originalUrl} - ${req.method}`);
+    // logger.error(`[Gateway Error] ${statusCode} - ${message} - ${req.originalUrl} - ${req.method}`);
+    logger.error('unhandled_error', { statusCode, message: err.message, reqId: req?.id, stack: err.stack });
     console.error(`[Gateway Error] ${statusCode} - ${message} - ${req.originalUrl} - ${req.method}`);
     
     res.status(statusCode).json({
         success: false,
         message: message,
+        reqId: req?.id,
         errors: err.errors || []
     });
 });
