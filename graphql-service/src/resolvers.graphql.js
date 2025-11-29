@@ -34,15 +34,13 @@ const resolvers = {
     currentUser: async (_, __, context) => {
       // The verifyJWT middleware should place user info in context.user
       if (!context.user) {
-        // return null; // Or throw an AuthenticationError
+        // return null Or throw an AuthenticationError
         throw new GraphQLError('User is not authenticated', {
           extensions: { code: 'UNAUTHENTICATED' },
         });
       }
-      // Assuming context.user has the necessary details (_id, email, etc.)
-      // We might not even need to call the auth service if JWT has enough info.
       // return await requestService(authServiceClient, 'get', '/api/v1/users/current-user', {}, context);
-       return context.user; // Return user data from token/context
+       return context.user; 
     },
     coins: async (_, { page }, context) => {
       return await requestService(dataServiceClient, 'get', '/api/v1/coins', { params: { page } }, context);
@@ -51,8 +49,6 @@ const resolvers = {
       return await requestService(dataServiceClient, 'get', `/api/v1/coins/${id}`, {}, context);
     },
     watchlist: async (_, __, context) => {
-        // console.log(context) -> user is added before req alo in req body
-        // { user:{}, req:{}, res:{} }
       if (!context.user) throw new ApiError(401, 'Authentication required');
       return await requestService(dataServiceClient, 'get', '/api/v1/watchlist', {}, context);
     },
@@ -71,29 +67,29 @@ const resolvers = {
   Mutation: {
     addToWatchlist: async (_, { coinId }, context) => {
         if (!context.user) throw new ApiError(401, 'Authentication required');
-        // The service returns the created watchlist item, which matches the schema type
+        // service returns the created watchlist item, which matches the schema type
         return await requestService(dataServiceClient, 'post', '/api/v1/watchlist', { data: { coinId } }, context);
     },
     removeFromWatchlist: async (_, { coinId }, context) => {
       if (!context.user) throw new ApiError(401, 'Authentication required');
         try {
-            // Service returns {} on success, we need to return boolean
+            // Service returns {} on success, need to return boolean
              await requestService(dataServiceClient, 'delete', `/api/v1/watchlist/${coinId}`, {}, context);
-            return true; // Indicate success
+            return true;
         } catch (error) {
              console.error("Error removing from watchlist:", error);
              // Optionally check error type (e.g., 404 means already removed)
             if (error.statusCode === 404) {
-                return false; // Or maybe true if idempotent is desired
+                return false; 
             }
-             return false; // Indicate failure
+             return false; 
         }
     },
     addTransaction: async (_, { coinId, type, quantity, pricePerCoin, transactionDate }, context) => {
         if (!context.user) throw new ApiError(401, 'Authentication required');
         const payload = { coinId, type, quantity, pricePerCoin };
         if (transactionDate) {
-            payload.transactionDate = transactionDate; // Pass it along if provided
+            payload.transactionDate = transactionDate; 
         }
         // Service returns the created transaction
         return await requestService(dataServiceClient, 'post', '/api/v1/portfolio/transactions', { data: payload }, context);
@@ -119,7 +115,7 @@ const resolvers = {
 
   },
 
-  // Resolver for nested fields (if needed)
+  // Resolver for nested fields
   WatchlistItem: {
      // If WatchlistItem type had a 'coin: Coin' field
      coin: async (parent, _, context) => {
@@ -133,9 +129,6 @@ const resolvers = {
          return await requestService(dataServiceClient, 'get', `/api/v1/coins/${parent.coinId}`, {}, context);
      }
   }
-
-
-  // Add resolvers for other nested fields if defined in schema (e.g., User within Transaction)
 };
 
 export default resolvers;

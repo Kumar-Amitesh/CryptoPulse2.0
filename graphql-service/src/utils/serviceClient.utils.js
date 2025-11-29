@@ -15,26 +15,13 @@ if (!AUTH_SERVICE_URL || !DATA_SERVICE_URL) {
     const errorMsg = "FATAL ERROR: AUTH_SERVICE_URL or DATA_SERVICE_URL is not defined in environment variables for GraphQL client.";
     logger.error(errorMsg);
     console.error(errorMsg);
-    // You might want to throw or handle this more gracefully depending on startup sequence
     // process.exit(1);
 }
 
 const authServiceClient = axios.create({ baseURL: AUTH_SERVICE_URL });
 const dataServiceClient = axios.create({ baseURL: DATA_SERVICE_URL });
 
-/**
- * Makes a request to a microservice.
- * @param {axios.AxiosInstance} client - The axios client instance for the service.
- * @param {string} method - HTTP method ('get', 'post', 'put', 'delete').
- * @param {string} path - The API path (e.g., '/api/v1/users/current-user').
- * @param {object} [options] - Optional configuration.
- * @param {object} [options.data] - Request body data for POST/PUT.
- * @param {object} [options.params] - URL query parameters.
- * @param {object} [options.headers] - Additional request headers.
- * @param {object} [context] - The GraphQL context, potentially containing user info.
- * @returns {Promise<any>} - The data from the service response.
- * @throws {ApiError} - Throws ApiError on request failure or non-2xx response.
- */
+
 const requestService = async (client, method, path, options = {}, context = {}) => {
     const { data, params, headers = {} } = options;
     const { user } = context;
@@ -64,7 +51,6 @@ const requestService = async (client, method, path, options = {}, context = {}) 
         });
 
         // Assuming services return data in a consistent structure like { success: true, data: ..., message: ... }
-        // Adjust based on your actual microservice response structure
         if (response.data && (response.status >= 200 && response.status < 300)) {
              // Check if the service response follows the ApiResponse structure
             if (response.data.hasOwnProperty('data') && response.data.hasOwnProperty('success') && response.data.success) {
@@ -103,12 +89,10 @@ const requestService = async (client, method, path, options = {}, context = {}) 
             message = `Service unavailable: No response received from ${method.toUpperCase()} ${path}. ${error.message}`;
             logger.error(`[GraphQL Resolver] Network error: ${message}`);
         } else {
-            // Setup error or other unexpected error
              message = `Error setting up request to ${method.toUpperCase()} ${path}: ${error.message}`;
              logger.error(`[GraphQL Resolver] Request setup error: ${message}`);
         }
 
-        // Re-throw as ApiError for consistent GraphQL error handling
         throw new ApiError(statusCode, message, errors);
     }
 };

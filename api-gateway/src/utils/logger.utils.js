@@ -1,6 +1,6 @@
 import { createLogger, format, transports } from 'winston';
 
-// Define the log format
+// log format
 const customLogFormat = format.printf(({level, message, timestamp}) => {
     return `[${ new Date(timestamp).toLocaleString() }] ${level.toUpperCase()}: ${message}`;
 })
@@ -37,13 +37,10 @@ const logger = createLogger({
                 format.timestamp(),
                 customLogFormat
             )
-            // level: 'http',   // log everything at level 'http' and all higher priority levels
         }),
         new transports.File({filename: '../logs/combined.log',}),
     ]
 })
 
 logger.info('Logger initialized');
-// logger.warn('This is a warning message');
-// logger.error('This is an error message');
 export default logger;

@@ -36,17 +36,15 @@ app.use(
   morgan(morganFormat, {
     stream: {
       write: (message) => {
-        // Send morgan output to your structured logger at http level
         if (logger && typeof logger.http === "function")
           logger.http(message.trim());
         else console.info(message.trim());
       },
     },
-    skip: (req) => req.path === "/metrics", // skip noisy endpoints
   })
 );
 
-// --- Apollo Server Setup ---
+// Apollo Server Setup
 const apolloServer = new ApolloServer({
     typeDefs,
     resolvers,
@@ -71,7 +69,6 @@ async function startApolloServer() {
                     // Authenticate user context via headers forwarded by the API Gateway
                     if (userId && userSecret === process.env.USER_SECRET_KEY) {
                         return {
-                            // User object simplified to hold just the ID for downstream requests
                             user: user, 
                             req,
                             res

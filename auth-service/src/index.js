@@ -41,7 +41,7 @@ const shutdown = async (signal) => {
     server.close(async () => { 
       console.log('HTTP server closed.');
       try {
-        await mongoose.connection.close(false); // Close DB connection
+        await mongoose.connection.close(false); 
         logger.info('MongoDB connection closed.');
         console.log('MongoDB connection closed.');
         await redisClient.quit();
@@ -50,7 +50,7 @@ const shutdown = async (signal) => {
       } catch (err) {
         logger.error('Error during shutdown:', err);
         console.error('Error during shutdown:', err);
-        process.exit(1); // Exit with error
+        process.exit(1); 
       }
     });
   } else {
@@ -76,6 +76,5 @@ const shutdown = async (signal) => {
   }, 10000); 
 };
 
-// Listen for termination signals
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));

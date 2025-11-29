@@ -11,7 +11,7 @@ const savePriceSnapshots = async (allCoinData) => {
         return;
     }
 
-    const snapshotTime = new Date(); // consistent timestamp for the batch
+    const snapshotTime = new Date(); 
 
     const snapshots = allCoinData.map(coin => ({
         coinId: coin.id,
@@ -43,7 +43,7 @@ const cacheCoinsData = async (allCoinData) => {
         return;
     }
 
-    await savePriceSnapshots(allCoinData); // Call the snapshot saving function
+    await savePriceSnapshots(allCoinData); 
 
     const sortedCoins = allCoinData.sort(
         (a, b) => (a.market_cap_rank || 9999) - (b.market_cap_rank || 9999)
@@ -158,7 +158,7 @@ export const updateWatchlistCoinsJob = async () => {
 
         // Fetch missing coins in batches
         for (let i = 0; i < coinsToFetch.length; i += WATCHLIST_BATCH_SIZE) {
-            const batchIds = coinsToFetch.slice(i, i + WATCHLIST_BATCH_SIZE); //
+            const batchIds = coinsToFetch.slice(i, i + WATCHLIST_BATCH_SIZE); 
             const idsString = batchIds.join(","); 
 
             const response = await api.get("/", { 

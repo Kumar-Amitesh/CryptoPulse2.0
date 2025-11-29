@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 
 dotenv.config({ path: '../../.env' }); 
 
-// --- Rate Limit Configuration ---
+// Rate Limit Configuration
 const RATE_LIMIT_WINDOW_SECONDS = 60; 
 const RATE_LIMIT_PLANS = {
     free: {
@@ -20,20 +20,18 @@ const RATE_LIMIT_PLANS = {
 const userRateLimiter = asyncHandler(async (req, res, next) => {
     if (!redisClient || !redisClient.isReady) {
         logger.error('Rate limiter cannot connect to Redis. Allowing request.');
-        // Potentially dangerous to allow all requests if Redis is down.
-        // returning a 503 Service Unavailable error instead:
+        // returning a 503 Service Unavailable error
         throw new ApiError(503, 'Rate limiting service unavailable.');
         // return next();
     }
 
     if (!req.user || !req.user._id) {
-        // Should not happen if used after verifyJWT, but good practice to check
         logger.warn('User ID not found in request for rate limiting.');
-        return next(); // Or apply IP-based limiting here as a fallback
+        return next(); // Skip rate limiting for unauthenticated requests
     }
 
     const userId = req.user._id;
-    // Safely get the plan, default to 'free' if missing or invalid
+    // Determine user's plan and corresponding limit
     const plan = req.user.plan && RATE_LIMIT_PLANS[req.user.plan] ? req.user.plan : 'free';
     const { limit } = RATE_LIMIT_PLANS[plan];
 
@@ -42,7 +40,7 @@ const userRateLimiter = asyncHandler(async (req, res, next) => {
     try {
         const currentCount = await redisClient.incr(key);
 
-        // Set expiry only on the first request in the window
+        // Set expiry on first increment
         if (currentCount === 1) {
             await redisClient.expire(key, RATE_LIMIT_WINDOW_SECONDS);
         }
@@ -62,7 +60,6 @@ const userRateLimiter = asyncHandler(async (req, res, next) => {
         next();
     } catch (error) {
         logger.error(`Error in rate limiting middleware for user ${userId}:`, error);
-        // Don't block the user due to a rate limiter error, but log it
         next();
     }
 });

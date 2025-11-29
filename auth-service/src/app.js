@@ -31,13 +31,12 @@ app.use(
   morgan(morganFormat, {
     stream: {
       write: (message) => {
-        // Send morgan output to your structured logger at http level
         if (logger && typeof logger.http === "function")
           logger.http(message.trim());
         else console.info(message.trim());
       },
     },
-    skip: (req) => req.path === "/metrics", // skip noisy endpoints
+    skip: (req) => req.path === "/metrics", 
   })
 );
 

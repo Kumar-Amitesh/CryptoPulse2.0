@@ -31,13 +31,11 @@ const logger = createLogger({
             filename: '../logs/http.log',
             format: format.combine(
                 format((info) => {
-                    // console.log(info);
                     return info.level === 'http' ? info : false
                 })(),
                 format.timestamp(),
                 customLogFormat
             )
-            // level: 'http',   // log everything at level 'http' and all higher priority levels
         }),
         new transports.File({filename: '../logs/combined.log',}),
     ]

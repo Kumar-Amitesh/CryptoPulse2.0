@@ -30,7 +30,7 @@ connectDB()
     process.exit(1);
 })
 
-// Graceful Shutdown Function (Simplified as no DB/Redis connections here)
+// Graceful Shutdown Function
 const shutdown = async (signal) => {
   logger.info(`${signal} received. Shutting down gracefully...`);
   console.log(`${signal} received. Shutting down gracefully...`);

@@ -1,7 +1,7 @@
 import { client as redisClient } from '../config/redis.config.js';
 import logger from '../utils/logger.utils.js';
 
-// Cache expiry time for public coin data (15 seconds, short-lived as worker updates frequently)
+// Cache expiry time in seconds
 const CACHE_EXPIRY_SECONDS = 120; 
 
 const cacheMiddleware = async (req, res, next) => {
@@ -18,7 +18,7 @@ const cacheMiddleware = async (req, res, next) => {
     const cacheKey = `response-cache:${req.originalUrl}`;
     
     try {
-        // 1. Check Cache
+        // Check Cache
         const cachedResponse = await redisClient.get(cacheKey);
 
         if (cachedResponse) {
@@ -33,7 +33,7 @@ const cacheMiddleware = async (req, res, next) => {
         logger.debug(`[Cache Miss] for ${req.originalUrl}`);
         res.setHeader('X-Cache-Status', 'MISS');
 
-        // 2. Wrap response to capture body
+        // Wrap response to capture body
         const originalSend = res.send;
 
         let capturedResponse = null; 
@@ -61,7 +61,7 @@ const cacheMiddleware = async (req, res, next) => {
             return res.send(body);
         };
 
-        // 3. Continue to downstream handler (proxy)
+        // Continue to downstream handler (proxy)
         next();
 
     } catch (error) {

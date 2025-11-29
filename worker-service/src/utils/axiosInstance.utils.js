@@ -1,7 +1,7 @@
 import axios from 'axios'
 import axiosRetry from 'axios-retry'
 import dotenv from 'dotenv'
-import Opossum from 'opossum' // Circuit breaker library
+import Opossum from 'opossum' 
 import logger from './logger.utils.js'
 
 dotenv.config({
@@ -15,7 +15,7 @@ const Api = axios.create({
     }
 })
 
-// --- Add Retry Logic ---
+// Add Retry Logic
 axiosRetry(Api, {
     retries: 3, // Number of retries-> total attempts = 1 initial + 3 retries
     
@@ -48,7 +48,7 @@ axiosRetry(Api, {
         return shouldRetry;
     },
 
-    // A callback to log each retry attempt
+    // callback to log each retry attempt
     onRetry: (retryCount, error, requestConfig) => {
         logger.warn(
         `WORKER-AXIOS: [Retry Attempt ${retryCount}] URL: ${requestConfig.url}, Error: ${error.message}`
@@ -56,14 +56,14 @@ axiosRetry(Api, {
     },
 });
 
-// --- Circuit Breaker Options ---
+// Circuit Breaker Options
 const circuitBreakerOptions = {
   timeout: 5000, // mark as failure if takes longer than 5s
   errorThresholdPercentage: 50, // open circuit after 50% failures
   resetTimeout: 30000, // after 30s, allow trial request again
 };
 
-// --- Function Wrapped by Circuit Breaker ---
+// Function Wrapped by Circuit Breaker
 const circuitBreaker = new Opossum(
   async (config) => {
     // use Axios instance internally
@@ -73,7 +73,7 @@ const circuitBreaker = new Opossum(
 );
 
 
-// --- Circuit Breaker Event Logging ---
+// Circuit Breaker Event Logging
 circuitBreaker.on('open', () => {
   logger.error(
     'WORKER-AXIOS: Circuit Breaker Opened. Requests to CoinGecko will fail fast.'
@@ -94,14 +94,8 @@ circuitBreaker.on('failure', (error) => {
 });
 
 
-// --- Protected API Wrapper ---
+// Protected API Wrapper
 const api = {
-  /**
-   * GET request protected by retry + circuit breaker
-   * @param {string} url - The endpoint URL (relative to baseURL)
-   * @param {object} config - Optional Axios config (params, headers, etc.)
-   * @returns {Promise<AxiosResponse>}
-   */
   get: async (url, config = {}) => {
     const axiosConfig = { ...config, url };
     try {

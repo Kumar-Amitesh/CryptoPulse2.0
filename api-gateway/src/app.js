@@ -2,8 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { v4 as uuid } from "uuid";
-// fixRequestBody ensures proxied requests keep a correct body (especially for non-GET methods and certain content-types).
-import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
+import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';  // fixRequestBody ensures proxied requests keep a correct body (especially for non-GET methods and certain content-types).
 import dotenv from 'dotenv';
 import verifyJWT from './middleware/auth.middleware.js';
 import logger from './utils/logger.utils.js';
@@ -14,55 +13,37 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import cacheMiddleware from './middleware/cache.middleware.js';
 import morgan from 'morgan';
 
-// --- Apollo Server Imports ---
-// import { ApolloServer } from '@apollo/server';
-// import { expressMiddleware } from '@apollo/server/express5';
-// import { expressMiddleware } from '@as-integrations/express5';
-
-// import http from 'http';
-
-// --- GraphQL Schema/Resolvers ---
-// import typeDefs from './graphql/schema.graphql.js';
-// import resolvers from './graphql/resolvers.graphql.js';
-
-
 dotenv.config({
     path:'../../.env' 
 });
 
 const app = express();
 
-// Trust the first proxy in front of your app
-// This is a common setting for many hosting providers.
-// If this gateway runs behind a load balancer, add app.set('trust proxy', 1) so IP detection works correctly.
+// If gateway runs behind a load balancer, add app.set('trust proxy', 1) so IP detection and secure cookies work correctly.
 if (process.env.TRUST_PROXY) {
-  // allow values: 'true' | 'false' | number string
   if (process.env.TRUST_PROXY === "true") app.set("trust proxy", true);
   else if (process.env.TRUST_PROXY === "false") app.set("trust proxy", false);
   else app.set("trust proxy", Number(process.env.TRUST_PROXY));
 } else {
-  // Safe default for many hosting providers
+  // default to trusting first proxy
   app.set("trust proxy", 1);
 }
-// app.set("trust proxy", 1);
+
 app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_BODY_LIMIT || '100kb' }));
 app.use(express.json({ limit: process.env.REQUEST_BODY_LIMIT || '100kb' }));
 
-// --- Request ID middleware (for correlation across services) ---
+// Request ID middleware (for correlation across services)
 app.use((req, res, next) => {
   // Allow upstream proxy to pass an existing request id
   const existing = req.headers["x-request-id"] || req.headers["x_correlation_id"];
   req.id = existing || uuid();
   res.setHeader("X-Request-ID", req.id);
-  // attach to logger default meta if your logger supports it
-  // if (logger && typeof logger.defaultMeta === "object")
-  //   logger.defaultMeta.reqId = req.id;
   next();
 });
 
-// --- Morgan setup: include req-id token and pipe to your logger ---
+// Morgan setup: include req-id token and pipe to logger
 morgan.token('req-id', (req) => req.id || '-');
 morgan.token('remote-addr', (req) => req.ip || req.connection?.remoteAddress || '-');
 
@@ -72,7 +53,6 @@ app.use(
   morgan(morganFormat, {
     stream: {
       write: (message) => {
-        // Send morgan output to your structured logger at http level
         if (logger && typeof logger.http === "function")
           logger.http(message.trim());
         else console.info(message.trim());
@@ -82,7 +62,7 @@ app.use(
   })
 );
 
-// --- Response logging middleware for structured request lifecycle logs ---
+// Response logging middleware for structured request lifecycle logs
 app.use((req, res, next) => {
   const start = Date.now();
   // capture end of response
@@ -105,21 +85,21 @@ app.use((req, res, next) => {
 });
 
 
-// --- General IP-Based Rate Limiter ---
+// General IP-Based Rate Limiter
 const generalLimiter = rateLimit({ 
     windowMs: Number(process.env.RATE_WINDOW_MS) || 15 * 60 * 1000,
     max: Number(process.env.RATE_MAX) || 100,
     message: 'Too many requests from this IP, please try again after 15 minutes.',
     standardHeaders: 'draft-7', 
 	  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-    // prefix if your Redis instance is shared
+    // prefix if Redis instance is shared
     keyGenerator: (req) => {
         console.log('IP Key Generator - Client IP:', ipKeyGenerator(req).ip);
         return `rate-limit-ip:${ipKeyGenerator(req).ip}`;
     },
     store: new RedisStore({
-        sendCommand: (...args) => redisClient.sendCommand(args), // <-- Connect store to your client
-    }), // Configure RedisStore here for distributed environments
+        sendCommand: (...args) => redisClient.sendCommand(args), // Connect store to redis client
+    }), // Configure RedisStore for distributed environments
 });
 
 app.use(generalLimiter);
@@ -137,10 +117,7 @@ if (!AUTH_SERVICE_URL || !DATA_SERVICE_URL || !WEBSOCKET_SERVICE_URL || !GRAPHQL
     process.exit(1); 
 }
 
-// console.log(`Auth Service URL: ${AUTH_SERVICE_URL}`);
-// console.log(`Data Service URL: ${DATA_SERVICE_URL}`);
-
-// --- Helper Function for Logging ---
+// Helper Function for Logging
 const logProvider = (provider) => {
     return {
         log: logger.debug.bind(logger), // Use debug level for HPM logs
@@ -151,18 +128,15 @@ const logProvider = (provider) => {
 };
 
 
-// --- Common Proxy Options ---
+// Common Proxy Options
 const commonProxyOptions = {
     changeOrigin: true,
     xfwd: true, // add x-forwarded-* headers
     // logger:console,
-    preserveHeaderKeyCase: true,
     logProvider,
+    preserveHeaderKeyCase: true,
     on:{
-
         proxyReq: (proxyReq, req, res) => {
-            // console.log('[HPM onProxyReq] req.user object:', req.user);
-            // Add the request id so downstream services can correlate logs
             if (req.id) proxyReq.setHeader('X-Request-ID', req.id);
             proxyReq.setHeader('X-User-Secret', process.env.USER_SECRET_KEY);
             if (req.user) {
@@ -183,7 +157,7 @@ const commonProxyOptions = {
 
         // called when the proxy receives the response from the target
         proxyRes: (proxyRes, req, res) => {
-          // you can capture headers, status codes here
+          // capture headers, status codes here
           logger.debug('proxy_response', {
             reqId: req.id,
             url: req.originalUrl,
@@ -206,7 +180,7 @@ const commonProxyOptions = {
 };
 
 
-// --- Create Proxy Instances ---
+// Create Proxy Instances
 const makeProxy = (target, opts = {}) => createProxyMiddleware({ ...commonProxyOptions, target, ...opts });
 
 // Proxy for the Authentication Service
@@ -227,39 +201,12 @@ const authServiceProxy = makeProxy(AUTH_SERVICE_URL, {
 });
 
 // Proxy for the Data Service
-// const dataServiceProxy = createProxyMiddleware({
-//   ...commonProxyOptions,
-//   target: DATA_SERVICE_URL,
-//   pathRewrite: (path, req) => {
-//     const newPath = req.originalUrl;
-//     console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
-//     logger.debug(
-//       `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
-//     );
-//     return newPath;
-//   },
-// });
 const dataServiceProxy = makeProxy(DATA_SERVICE_URL, {
   pathRewrite: (path, req) => req.originalUrl || path,
 });
 
 
 // Proxy for the WebSocket Service (Handles HTTP polling and WS upgrades)
-// const websocketServiceProxy = createProxyMiddleware({
-//     ...commonProxyOptions,
-//     target: WEBSOCKET_SERVICE_URL,
-//     ws: true, // IMPORTANT: Enable WebSocket proxying
-//     // No pathRewrite needed if websocket service listens on root for socket.io
-//     pathRewrite: { '^/socket.io': '/socket.io' }, 
-//      on: { // Keep specific handlers if necessary, remove X-User-ID setting for WS proxy
-//         proxyReqWs: (proxyReq, req, socket, options, head) => {
-//            logger.debug(`[HPM WS ProxyReq] Upgrading connection for ${req.url}`);
-//         //    console.log(req)
-//         },
-//         error: commonProxyOptions.on.error, // Reuse common error handler
-//          // proxyReq: (proxyReq, req, res) => { /* remove X-User-ID for WS */} // Don't set X-User-ID via HTTP header for WS
-//     }
-// });
 const websocketServiceProxy = makeProxy(WEBSOCKET_SERVICE_URL, {
   ws: true,
   pathRewrite: { "^/socket.io": "/socket.io" },
@@ -267,73 +214,23 @@ const websocketServiceProxy = makeProxy(WEBSOCKET_SERVICE_URL, {
     proxyReqWs: (proxyReq, req, socket, options, head) => {
       logger.debug("ws_upgrade", { reqId: req.id, url: req.url });
     },
-    // reuse common error handler via function pointer
     error: commonProxyOptions.on.error,
   },
 });
 
-// const graphqlserviceproxy = createProxyMiddleware({
-//   ...commonProxyOptions,
-//   target: GRAPHQL_SERVICE_URL,
-//   pathRewrite: (path, req) => {
-//     const newPath = req.originalUrl;
-//     console.log(`[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`); 
-//     logger.debug(
-//       `[HPM PathRewrite] Original: ${path} => Rewritten: ${newPath}`
-//     );
-//     return newPath; // Return the full path expected by the auth service
-//   },
-// });
+// Proxy for the GraphQL Service
 const graphqlServiceProxy = makeProxy(GRAPHQL_SERVICE_URL, {
   pathRewrite: (path, req) => req.originalUrl || path,
 });
 
-// --- Apollo Server Setup ---
-// const apolloServer = new ApolloServer({
-//     typeDefs,
-//     resolvers,
-//     // Add introspection: true in development if needed, but disable in production
-//     // introspection: process.env.NODE_ENV !== 'production',
-//     introspection: true,
-// });
+// Routes
 
-// Start the Apollo Server 
-// async function startApolloServer() {
-//     try {
-//         await apolloServer.start();
-//         logger.info('Apollo Server started successfully.');
-
-//         app.use(
-//             '/graphql',
-//             verifyJWT,
-//             userRateLimiter,
-//             expressMiddleware(apolloServer, {
-//                 context: async ({ req, res }) => ({
-//                     user: req.user,
-//                     req,
-//                     res
-//                 }),
-//             }),
-//         );
-
-//         console.log('Apollo Server /graphql endpoint is set up.');
-//     } catch (err) {
-//         logger.error('Error starting Apollo Server:', err);
-//         console.error('Error starting Apollo Server:', err);
-//     }
-// }
-
-// --- Route Definitions ---
-
-// Add WebSocket Proxy Route
-// The path '/socket.io/' is the default used by socket.io client
+// path '/socket.io/' is the default used by socket.io client
 app.use('/socket.io/', websocketServiceProxy);
 
 // Secured Data Routes
 app.use('/api/v1/watchlist', verifyJWT, userRateLimiter, dataServiceProxy);
 app.use('/api/v1/portfolio', verifyJWT, userRateLimiter, dataServiceProxy);
-app.use('/graphql', userRateLimiter, graphqlServiceProxy);
-
 
 // Secured User Account Routes
 app.use(
@@ -349,31 +246,25 @@ app.use(
 );
 
 
-// Public User Auth Routes
+// Public User Auth Route
 app.use('/api/v1/users', userRateLimiter, authServiceProxy);
 
-// Public Coin Data Routes
+// Public Coin Data Route
 app.use('/api/v1/coins', userRateLimiter, cacheMiddleware, dataServiceProxy);
 
-// Public Analytics Routes
+// Public Analytics Route
 app.use('/api/v1/analytics', userRateLimiter, dataServiceProxy);
 
+// Public GraphQL Route
+app.use('/graphql', userRateLimiter, graphqlServiceProxy);
 
-// --- Healthcheck and metrics endpoints ---
+
+
+// Healthcheck endpoint
 app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: Date.now(), reqId: req.id }));
+;
 
-
-// metrics endpoint is reserved for Prometheus scraping; keep it lightweight
-app.get("/metrics", (req, res) => {
-  // return basic metrics or integrate prom-client
-  res.set("Content-Type", "text/plain");
-  res.send(
-    "# HELP process_uptime_seconds Process uptime in seconds\n# TYPE process_uptime_seconds gauge\nprocess_uptime_seconds " +
-      process.uptime()
-  );
-});
-
-// --- Global Error Handler ---
+// Global Error Handler
 app.use((err, req, res, next) => {
     const statusCode = err.statusCode || 500;
     const message = err.message || 'Internal Server Error';
@@ -388,10 +279,6 @@ app.use((err, req, res, next) => {
         errors: err.errors || []
     });
 });
-
-
-// await startApolloServer();
-
 
 export default app;
 export { websocketServiceProxy };

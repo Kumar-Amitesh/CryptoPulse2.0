@@ -18,7 +18,7 @@ const redisConnection = {
 
 const QUEUE_NAME = 'crypto-tasks';
 
-// --- Job Names (must match scheduler) ---
+// Job Names (must match scheduler)
 const JOB_UPDATE_TOP_COINS = 'update-top-coins';
 const JOB_UPDATE_WATCHLIST = 'update-watchlist';
 
@@ -78,7 +78,7 @@ async function startWorker() {
         }
     );
 
-    // --- Worker Event Listeners ---
+    // Worker Event Listeners
     worker.on('completed', (job, result) => {
         console.log(`Job ${job.id} (${job.name}) completed successfully.`);
     });
@@ -87,8 +87,7 @@ async function startWorker() {
         console.error(`Job ${job?.id} (${job?.name}) failed with error: ${err.message}`, err.stack);
     });
 
-     worker.on('error', err => {
-        // Local errors, like Redis connection issues
+    worker.on('error', err => {
         console.error('Worker encountered an error:', err);
     });
 
@@ -101,7 +100,7 @@ startWorker().catch((error) => {
     process.exit(1);
 });
 
-// --- Graceful Shutdown ---
+// Graceful Shutdown
 async function shutdown() {
     console.log('Shutting down worker...');
     if (worker) {

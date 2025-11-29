@@ -43,7 +43,6 @@ const registerUser = asyncHandler(async(req,res,next)=>{
     const existedUser = await User.findOne({$or:[{username},{email}]})
 
     const avatarLocalPath = req.file?.path
-    // console.log('Avatar Local Path: ',avatarLocalPath)
 
     if(!avatarLocalPath){
         throw new ApiError(400,'Avatar file is required')
@@ -467,7 +466,7 @@ const updateAccountDetails = asyncHandler(async(req,res,next)=>{
         },
         {
             $set:{
-                ...updates // spread operator to include all updates
+                ...updates 
             }
         },
         {

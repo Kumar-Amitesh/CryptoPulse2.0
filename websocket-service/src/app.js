@@ -30,13 +30,12 @@ app.use(
   morgan(morganFormat, {
     stream: {
       write: (message) => {
-        // Send morgan output to your structured logger at http level
         if (logger && typeof logger.http === "function")
           logger.http(message.trim());
         else console.info(message.trim());
       },
     },
-    skip: (req) => req.path === "/metrics", // skip noisy endpoints
+    skip: (req) => req.path === "/metrics", 
   })
 );
 
@@ -51,11 +50,11 @@ const io = new Server(httpServer, {
         methods: ["GET", "POST"],
         credentials: true
     },
-    // Optional: configure transports if needed (defaults are usually fine)
+    // Optional: configure transports if needed
     // transports: ['websocket', 'polling'],
 });
 
-// --- Configure Redis Adapter ---
+// Configure Redis Adapter
 if (redisClient.isReady && redisSubscriber.isReady) {
     io.adapter(createAdapter(redisClient, redisSubscriber));
     logger.info('Socket.IO Redis Adapter configured.');
@@ -64,7 +63,6 @@ if (redisClient.isReady && redisSubscriber.isReady) {
     // Consider ensuring Redis connection happens before this point in index.js
     // or adding retry logic here. For now, log a critical error.
     logger.error('CRITICAL: Redis clients not ready when configuring Socket.IO adapter!');
-    // Depending on your requirements, you might want to prevent server start:
     // process.exit(1);
 }
 
