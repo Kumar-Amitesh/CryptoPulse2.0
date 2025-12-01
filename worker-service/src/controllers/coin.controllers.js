@@ -67,7 +67,7 @@ const cacheCoinsData = async (allCoinData) => {
     allCoinData.forEach((coin) => {
         const key = `coin:${coin.id}`;
         const value = JSON.stringify(coin);
-        pipeline.set(key, value, { EX: 300 }); // 5 minutes expiry
+        pipeline.set(key, value); // 5 minutes expiry
     });
 
     try {
@@ -176,7 +176,7 @@ export const updateWatchlistCoinsJob = async () => {
                 newCoinsData.forEach((coin) => { 
                     const key = `coin:${coin.id}`; 
                     const value = JSON.stringify(coin); 
-                    pipeline.set(key, value, { EX: 600 }); 
+                    pipeline.set(key, value); 
                 });
                 await pipeline.exec(); 
                 console.log(`WORKER: Cached ${newCoinsData.length} watchlist coins from batch starting at index ${i}.`); 
