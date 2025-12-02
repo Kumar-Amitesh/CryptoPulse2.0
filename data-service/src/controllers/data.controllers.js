@@ -4,6 +4,7 @@ import ApiResponse from '../utils/ApiResponse.utils.js';
 import logger from '../utils/logger.utils.js';
 import { client as redisClient } from '../config/redis.config.js';
 import PriceSnapshot from '../models/PriceSnapshot.models.js';
+import { coinTrie } from '../utils/Trie.utils.js';
 
 /**
  * Gets the paginated list of coins for the homepage.
@@ -162,4 +163,20 @@ const getCoinHistory = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, historicalData, `Historical data for ${coinId} fetched successfully`));
 });
 
-export { getPaginatedCoins, getCoinById, getCoinHistory };
+const searchCoins = asyncHandler(async (req, res) => {
+    const { query } = req.query;
+
+    if (!query) {
+        throw new ApiError(400, "Query parameter is required");
+    }
+
+    // Use the Trie to search
+    // Limit to 10 results for specific suggestions
+    const results = coinTrie.search(query, 10);
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, results, "Search results fetched successfully"));
+});
+
+export { getPaginatedCoins, getCoinById, getCoinHistory, searchCoins };

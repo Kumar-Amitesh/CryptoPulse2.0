@@ -4,6 +4,7 @@ import connectDB from './config/db.config.js';
 import logger from './utils/logger.utils.js';
 import mongoose from 'mongoose';
 import { client as redisClient } from './config/redis.config.js';
+import buildIndex from './utils/buildIndex.utils.js';
 
 dotenv.config({
     path:'../../.env'
@@ -31,6 +32,17 @@ connectDB()
     console.error("MONGO db connection failed !!! ", err);
     process.exit(1);
 })
+
+// Initialize build search index
+setTimeout(async () => {
+    try {
+        await buildIndex();
+    } catch (err) {
+        logger.error('Error building index:', err);
+        console.error('Error building index:', err);
+    }
+}, 140000); 
+
 
 // Graceful Shutdown Function
 const shutdown = async (signal) => {
