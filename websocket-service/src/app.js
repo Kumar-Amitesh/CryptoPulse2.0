@@ -39,8 +39,16 @@ app.use(
   })
 );
 
-app.get('/api/v1/websocket/health', (req, res) => {
-    res.status(200).json({ status: 'UP', message: 'WebSocket service is running.' });
+app.get('/api/v1/websocket/health', async(req, res) => {
+    try{
+      await redisClient.ping();
+      await redisSubscriber.ping();
+      res.status(200).json({ status: 'ok', redisClient: redisClient.isReady, redisSubscriber: redisSubscriber.isReady });
+    }
+    catch(err){
+      logger.error(`Health Check Error: ${err.message}`, { stack: err.stack });
+      res.status(500).json({ status: 'error', message: 'Health check failed' });
+    }
 });
 
 // Setup Socket.IO Server
