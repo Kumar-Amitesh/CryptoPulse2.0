@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import logger from './utils/logger.utils.js';
+import mongoose from 'mongoose';
 
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express5';
@@ -11,6 +12,7 @@ import resolvers from './resolvers.graphql.js';
 
 import User from './models/Users.models.js';
 import morgan from 'morgan';
+import { mongo } from 'mongoose';
 
 dotenv.config({
     path:'../../.env' 
@@ -98,6 +100,19 @@ app.use((err, req, res, next) => {
         message: message,
         errors: err.errors || []
     });
+});
+
+app.get('/graphql/health', async(req, res) => {
+    try {
+        if (mongoose.connection.readyState !== 1) {
+            throw new Error('MongoDB not connected');
+        }
+
+        res.status(200).json({ status: 'UP', services: { mongodb: 'UP' } });
+    } catch (error) {
+        logger.error('Health check failed:', error);
+        res.status(503).json({ status: 'DOWN', error: error.message });
+    }
 });
 
 
