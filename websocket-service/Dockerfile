@@ -1,6 +1,8 @@
 FROM node:20-slim
 
-WORKDIR /api-gateway
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /websocket-service
 
 COPY package*.json ./
 

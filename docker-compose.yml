@@ -26,6 +26,11 @@ services:
     env_file: ./.env
     depends_on:
       - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/users/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 
   data-service:
@@ -34,6 +39,11 @@ services:
     env_file: ./.env
     depends_on:
       - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/api/v1/data/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   graphql-service:
     build: ./graphql-service
@@ -44,6 +54,11 @@ services:
       - auth-service
       - data-service
       - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   worker-service:
     build: ./worker-service
@@ -65,6 +80,11 @@ services:
     env_file: ./.env
     depends_on:
       - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/api/v1/websocket/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   load-tester:
     image: yamaszone/hey
