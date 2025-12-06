@@ -1,479 +1,203 @@
 #!/bin/bash
 
-# ===================================================
-#  🔁 LOCAL CI/CD PIPELINE — PRO MODE
-#  ✅ Changed-services only deploy
-#  ✅ ONE timestamp backup per service
-#  ✅ Real health checks
-#  ✅ Safe rollback + zero downtime
-# ===================================================
+#  CI/CD PIPELINE
+#  Zero-Downtime Deployment (Blue-Green)
+#  Automated Rollbacks
+#  "Init" mode for first runs
+#  Smart Change Detection
 
-# ---- COLORS ----
+# COLORS
 GREEN="\e[32m"
 RED="\e[31m"
 YELLOW="\e[33m"
 CYAN="\e[36m"
 NC="\e[0m"
 
-# ---- CONFIG ----
-SERVICES=("auth-service" "api-gateway" "data-service" "worker-service" "scheduler-service" "websocket-service" "graphql-service")
+# CONFIG
+FIXED_PORT_SERVICES=("api-gateway" "redis")
+SERVICES=("auth-service" "data-service" "api-gateway" "graphql-service" "websocket-service" "worker-service" "scheduler-service" )
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
 echo -e "${CYAN}\n=============================="
-echo -e " 🔄 LOCAL CI/CD PIPELINE"
+echo -e " 🔄 CI/CD PIPELINE STARTED"
 echo -e "==============================${NC}"
 
-# ===================================================
-# 1️⃣ DETECT CHANGED SERVICES
-# ===================================================
-
-echo -e "${YELLOW}\n[1/7] 🔍 DETECTING CHANGED SERVICES...${NC}"
+# DETECT SCOPE (INIT vs UPDATE)
 
 CHANGED_SERVICES=()
 
-for service in "${SERVICES[@]}"; do
-    if git diff --name-only HEAD~1 | grep "^$service/" > /dev/null; then
-        CHANGED_SERVICES+=("$service")
-    fi
-done
+if [[ "$1" == "--init" ]]; then
+    echo -e "${YELLOW}🚀 INIT MODE DETECTED: Deploying ALL services...${NC}"
+    CHANGED_SERVICES=("${SERVICES[@]}")
+else
+    echo -e "${YELLOW}🔍 CHECKING FOR CHANGES (Git Diff)...${NC}"
+    for service in "${SERVICES[@]}"; do
+        # Check if the folder has changed in the last commit
+        if git diff --name-only HEAD~1 | grep "^$service/" > /dev/null; then
+            CHANGED_SERVICES+=("$service")
+        fi
+    done
+fi
 
 if [ ${#CHANGED_SERVICES[@]} -eq 0 ]; then
-    echo -e "${YELLOW}⚠️  No service changes detected. Skipping deployment.${NC}"
+    echo -e "${GREEN}✨ No changes detected. System is up to date.${NC}"
     exit 0
 fi
 
-echo -e "${CYAN}🧩 Services to deploy: ${CHANGED_SERVICES[*]}${NC}"
+echo -e "${CYAN}👉 Target Services: ${CHANGED_SERVICES[*]}${NC}"
 
-# ===================================================
-# 2️⃣ RUN LOCAL / UNIT TESTS
-# ===================================================
+# RUN LOCAL / UNIT TESTS
 
 echo -e "${YELLOW}\n[2/7] 🧪 RUNNING LOCAL TESTS...${NC}"
 
-if ! npm test; then
-    echo -e "${RED}❌ TESTS FAILED. PIPELINE STOPPED.${NC}"
-    exit 1
-fi
+for service in "${CHANGED_SERVICES[@]}"; do
+    echo -e "\n${CYAN}→ Testing: $service${NC}"
+
+    docker compose run --rm --no-deps \
+      -e MONGO_URI="mongodb://localhost:27017/non_existent_db" \
+      $service npm test
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ TESTS FAILED for $service. STOPPING PIPELINE.${NC}"
+        exit 1
+    fi
+done
 
 echo -e "${GREEN}✅ TESTS PASSED${NC}"
 
-# ===================================================
-# 3️⃣ BACKUP RUNNING CONTAINERS
-# ===================================================
 
-echo -e "${YELLOW}\n[3/7] 🔐 BACKING UP RUNNING CONTAINERS...${NC}"
+# BUILD IMAGES
 
-for service in "${CHANGED_SERVICES[@]}"; do
-
-    RUNNING_ID=$(docker ps -qf "name=${service}")
-
-    if [ -n "$RUNNING_ID" ]; then
-        CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' $RUNNING_ID)
-        BACKUP_IMAGE="$service:backup-$TIMESTAMP"
-
-        # Remove old backups
-        OLD_BACKUPS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "$service:backup-")
-        for img in $OLD_BACKUPS; do
-            docker rmi -f "$img" > /dev/null 2>&1
-            echo -e "${YELLOW}🧹 Removed old: $img${NC}"
-        done
-
-        # Create new backup
-        docker tag "$CURRENT_IMAGE" "$BACKUP_IMAGE"
-        echo -e "${CYAN}📦 Backup created: $BACKUP_IMAGE${NC}"
-    else
-        echo -e "${YELLOW}⚠️  $service not running — no backup needed${NC}"
-    fi
-
-done
-
-# ===================================================
-# 4️⃣ BUILD ONLY CHANGED SERVICES
-# ===================================================
-
-echo -e "${YELLOW}\n[4/7] 🛠 BUILDING IMAGES...${NC}"
+echo -e "${YELLOW}\n[2/4] 🛠 BUILDING IMAGES...${NC}"
 
 if ! docker compose build "${CHANGED_SERVICES[@]}"; then
-    echo -e "${RED}❌ BUILD FAILED. STOPPING PIPELINE.${NC}"
+    echo -e "${RED}❌ BUILD FAILED. PIPELINE STOPPED.${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✅ BUILD SUCCESS${NC}"
+echo -e "${GREEN}✅ Build Success${NC}"
 
-# ===================================================
-# HEALTH CHECK FUNCTION
-# ===================================================
 
-check_health() {
+# DEPLOY SERVICES
 
-  SERVICE=$1
-
-  for i in {1..10}; do
-
-    STATUS=$(docker inspect --format='{{.State.Health.Status}}' $SERVICE 2>/dev/null)
-
-    if [ "$STATUS" == "healthy" ]; then
-      echo -e "${GREEN}✅ $SERVICE is healthy${NC}"
-      return 0
-    fi
-
-    echo -e "${YELLOW}⏳ Waiting for $SERVICE to be healthy...${NC}"
-    sleep 3
-  done
-
-  return 1
-}
-
-# ===================================================
-# 5️⃣ ZERO-DOWNTIME DEPLOY + HEALTH CHECK
-# ===================================================
-
-echo -e "${YELLOW}\n[5/7] 🚀 DEPLOYING SERVICES...${NC}"
+echo -e "${YELLOW}\n[3/4] 🚀 DEPLOYING...${NC}"
 
 DEPLOYED=()
 FAILED=()
 
 for service in "${CHANGED_SERVICES[@]}"; do
+    echo -e "\n${CYAN}------------------------------------------------${NC}"
+    echo -e "${CYAN}🔄 Updating: $service${NC}"
 
-    echo -e "${CYAN}\n→ Deploying $service${NC}"
-
-    if ! docker compose up -d --no-deps $service; then
-
-        echo -e "${RED}❌ $service deployment failed${NC}"
-        FAILED+=("$service")
-        continue
-    fi
-
-    if check_health "$service"; then
-        DEPLOYED+=("$service")
-    else
-        echo -e "${RED}❌ $service failed health check. Rolling back...${NC}"
-
-        docker rmi -f "$service:latest" > /dev/null 2>&1
-
-        BACKUP_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "$service:backup-")
-        if [ -n "$BACKUP_IMAGE" ]; then
-            docker tag "$BACKUP_IMAGE" "$service:latest"
-            docker compose up -d --no-deps $service
-            echo -e "${GREEN}✅ $service rolled back and restarted${NC}"
+    # CHECK IF SERVICE IS FIXED-PORT (Standard Deploy) OR SCALABLE (Blue-Green)
+    if [[ " ${FIXED_PORT_SERVICES[*]} " =~ " ${service} " ]]; then
+        # STANDARD DEPLOY
+        echo -e "${YELLOW}⚠️  $service has fixed ports. Using Standard Recreate (brief downtime)...${NC}"
+        
+        # Recreate container
+        if docker compose up -d --no-deps --force-recreate "$service"; then
+             # Get the ID of the container we just started
+             NEW_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
         else
-            echo -e "${RED}⛔ No backup found for $service${NC}"
+             echo -e "${RED}❌ Failed to deploy $service${NC}"
+             FAILED+=("$service")
+             continue
         fi
 
+    else
+        # BLUE-GREEN DEPLOY (Scale Up -> Health Check -> Scale Down)
+        echo -e "${GREEN}✅ $service is scalable. Using Zero-Downtime Blue-Green...${NC}"
+
+        OLD_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
+
+        # Scale UP to 2
+        if ! docker compose up -d --scale "$service"=2 --no-recreate "$service"; then
+            echo -e "${RED}❌ Failed to scale $service${NC}"
+            FAILED+=("$service")
+            continue
+        fi
+
+        # Find new container ID
+        if [ -n "$OLD_CONTAINER_ID" ]; then
+            NEW_CONTAINER_ID=$(docker compose ps -q "$service" | grep -v "$OLD_CONTAINER_ID" | head -n 1)
+        else
+            NEW_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
+        fi
+    fi
+
+    echo -e "${YELLOW}⏳ Health checking container ($NEW_CONTAINER_ID)...${NC}"
+
+    # HEALTH CHECK LOOP
+    HEALTHY="false"
+    for i in {1..15}; do
+        STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$NEW_CONTAINER_ID" 2>/dev/null | tr -d '\r')
+        STATE=$(docker inspect --format='{{.State.Status}}' "$NEW_CONTAINER_ID" | tr -d '\r')
+
+        # If has explicit healthcheck
+        if [ "$STATUS" == "healthy" ]; then
+            HEALTHY="true"
+            break
+        fi
+
+        # Fallback: If no healthcheck defined, check if "running"
+        # empty or "<no value>" means no healthcheck defined
+        if [[ -z "$STATUS" || "$STATUS" == "<no value>" ]]; then
+            if [ "$STATE" == "running" ]; then 
+                HEALTHY="true"
+                break
+            fi
+        fi
+        
+        echo -n "."
+        sleep 4
+    done
+    echo ""
+
+    if [ "$HEALTHY" == "true" ]; then
+        echo -e "${GREEN}✅ Container is HEALTHY.${NC}"
+        
+        # Cleanup for Blue-Green services
+        if [[ ! " ${FIXED_PORT_SERVICES[*]} " =~ " ${service} " ]]; then
+            if [ -n "$OLD_CONTAINER_ID" ]; then
+                echo -e "${YELLOW}🧹 Removing old instance...${NC}"
+                docker stop "$OLD_CONTAINER_ID" > /dev/null 2>&1
+                docker rm "$OLD_CONTAINER_ID" > /dev/null 2>&1
+            fi
+            # Reset scale to 1
+            docker compose up -d --scale "$service"=1 --no-recreate "$service" > /dev/null 2>&1
+        fi
+        
+        DEPLOYED+=("$service")
+    else
+        echo -e "${RED}❌ Container FAILED health check (Status: $STATUS, State: $STATE).${NC}"
+        
+        # Stop the unhealthy container
+        echo -e "${YELLOW}TB Rolling back (Killing unhealthy container)...${NC}"
+        docker stop "$NEW_CONTAINER_ID" > /dev/null 2>&1
+        docker rm "$NEW_CONTAINER_ID" > /dev/null 2>&1
+        
+        # Restore old container scale
+        docker compose up -d --scale "$service"=1 --no-recreate "$service"
         FAILED+=("$service")
     fi
 
 done
 
-# ===================================================
-# 6️⃣ PIPELINE DASHBOARD
-# ===================================================
+
+# SUMMARY
 
 echo -e "\n${CYAN}================================"
-echo -e " 📊 PIPELINE STATUS DASHBOARD"
+echo -e " 📊 DEPLOYMENT REPORT"
 echo -e "================================${NC}"
 
-printf "%-25s %-25s\n" "SERVICE" "STATUS"
-echo "----------------------------------------------------------"
-
-for service in "${CHANGED_SERVICES[@]}"; do
-
-    STATUS=$(docker ps --format "{{.Names}} : {{.Status}}" | grep "$service")
-
-    if [ -z "$STATUS" ]; then
-        echo -e "$service                 ${RED}DOWN${NC}"
-    else
-        echo -e "$STATUS"
-    fi
-
-done
-
-# ===================================================
-# 7️⃣ FINAL RESULT
-# ===================================================
-
-echo -e "\n${CYAN}=============================="
-echo -e " 🚦 PIPELINE RESULT"
-echo -e "==============================${NC}"
-
 if [ ${#FAILED[@]} -eq 0 ]; then
-    echo -e "${GREEN}✅ ALL DEPLOYMENTS SUCCESSFUL${NC}"
+    echo -e "${GREEN}✅ SUCCESS: All services deployed successfully.${NC}"
+    echo -e "   Services: ${DEPLOYED[*]}"
 else
-    echo -e "${YELLOW}✅ Successful : ${DEPLOYED[*]}${NC}"
-    echo -e "${RED}❌ Failed     : ${FAILED[*]}${NC}"
+    echo -e "${RED}⚠️  PARTIAL FAILURE${NC}"
+    echo -e "${GREEN}   ✅ Deployed : ${DEPLOYED[*]}${NC}"
+    echo -e "${RED}   ❌ Failed   : ${FAILED[*]}${NC}"
 fi
 
-echo -e "\n${CYAN}📺 Live container logs:${NC}"
-# docker compose logs --tail=50
+echo -e "\n${CYAN}📺 Tail logs with: docker compose logs -f${NC}"
 docker compose logs -f
-
-
-
-
-
-
-
-
-# #!/bin/bash
-
-# # Configuration
-# # List of services that have tests to run
-# SERVICES=("auth-service" "api-gateway" "data-service" "worker-service" "scheduler-service" "websocket-service" "graphql-service")
-
-# # Step 1: CI (Continuous Integration)
-# echo "🔄 [CI] Starting Local Build & Test Pipeline..."
-
-# # 1. Build the images first so we test the exact code we plan to deploy
-# echo "🛠️  [CI] Building Docker images..."
-# docker compose build
-
-# # 2. Loop through each service and run its tests
-# for service in "${SERVICES[@]}"; do
-#     echo "🧪 [CI] Running tests for: $service"
-    
-#     # 'run --rm' creates a temporary container, runs the command, and deletes it.
-#     # '--no-deps' ensures we don't start the whole database stack just for a unit test.
-#     # Inject a fake Mongo URI so if a test accidentally tries to connect, it fails harmlessly
-#     docker compose run --rm --no-deps -e MONGO_URI="mongodb://localhost:27017/non_existent_db" $service npm test
-    
-#     # Check the exit code of the last command
-#     if [ $? -ne 0 ]; then
-#         echo "❌ [CI] Tests FAILED for $service. Deployment cancelled."
-#         exit 1
-#     fi
-#     echo "✅ [CI] Tests PASSED for $service."
-# done
-
-# echo "🎉 [CI] All tests passed!"
-
-# # CD (Continuous Deployment)
-# echo "🚀 [CD] Starting Application..."
-
-# # 3. Start the application
-
-# echo "🌐 [CD] Application is going live!"
-# docker compose up
-
-
-
-
-# #!/bin/bash
-
-# # ===================================================
-# #  🔁 Local CI/CD Pipeline (Build → Test → Deploy)
-# # ===================================================
-
-# # Colors for logs
-# GREEN="\e[32m"
-# RED="\e[31m"
-# YELLOW="\e[33m"
-# CYAN="\e[36m"
-# NC="\e[0m" # No color
-
-# SERVICES=("auth-service" "api-gateway" "data-service" "worker-service" "scheduler-service" "websocket-service" "graphql-service")
-
-# echo -e "${CYAN}\n=============================="
-# echo -e " 🔄 [CI] Starting Local CI/CD"
-# echo -e "==============================${NC}"
-
-# # ===================================================
-# # 1️⃣ BUILD STAGE
-# # ===================================================
-# echo -e "${YELLOW}\n[1/3] 🛠 BUILDING DOCKER IMAGES...${NC}"
-# if ! docker compose build; then
-#     echo -e "${RED}❌ Build failed. Stopping pipeline.${NC}"
-#     exit 1
-# fi
-# echo -e "${GREEN}✅ Build completed!${NC}"
-
-
-# # ===================================================
-# # 2️⃣ TEST STAGE (CI)
-# # ===================================================
-# echo -e "${YELLOW}\n[2/3] 🧪 RUNNING TESTS FOR ALL SERVICES...${NC}"
-
-# FAILED_SERVICES=()
-
-# for service in "${SERVICES[@]}"; do
-#     echo -e "\n${CYAN}→ Testing: $service${NC}"
-
-#     docker compose run --rm --no-deps \
-#       -e MONGO_URI="mongodb://localhost:27017/non_existent" \
-#       $service npm test
-
-#     if [ $? -ne 0 ]; then
-#         echo -e "${RED}❌ Tests FAILED for $service${NC}"
-#         FAILED_SERVICES+=("$service")
-#     else
-#         echo -e "${GREEN}✅ Tests PASSED for $service${NC}"
-#     fi
-# done
-
-# # If ANY test fails → CI fails
-# if [ ${#FAILED_SERVICES[@]} -ne 0 ]; then
-#     echo -e "${RED}\n❌ CI FAILED — Some services failed tests:${NC}"
-#     for s in "${FAILED_SERVICES[@]}"; do
-#         echo -e "  - $RED$s$NC"
-#     done
-#     exit 1
-# fi
-
-# echo -e "${GREEN}\n🎉 All tests passed! Proceeding to deployment...${NC}"
-
-
-# # ===================================================
-# # 3️⃣ DEPLOY STAGE (CD)
-# # ===================================================
-# echo -e "${YELLOW}\n[3/3] 🚀 DEPLOYING APPLICATION...${NC}"
-
-# # Backup last compose run
-# echo -e "${CYAN}→ Checking for previous deployment...${NC}"
-# docker compose down 2>/dev/null
-
-# # Deploy new version
-# if ! docker compose up -d; then
-#     echo -e "${RED}❌ Deployment failed. Rolling back...${NC}"
-#     docker compose down
-#     exit 1
-# fi
-
-# echo -e "${GREEN}🌐 Deployment started successfully!${NC}"
-# echo -e "${CYAN}→ Waiting for services to become healthy...${NC}"
-
-
-# # ===================================================
-# # HEALTH CHECK
-# # ===================================================
-# sleep 5
-# docker compose ps
-
-# echo -e "${GREEN}\n🎉 CI/CD PIPELINE COMPLETED SUCCESSFULLY!${NC}"
-
-# # ===================================================
-# # Attach to logs (interactive mode)
-# # ===================================================
-# # echo -e "${CYAN}\n📺 Attaching to live logs (interactive mode)...${NC}"
-# # docker compose logs -f
-
-
-
-
-# #!/bin/bash
-
-# # ===================================================
-# #  🔁 LOCAL CI/CD PIPELINE WITH REAL ROLLBACK & ZERO DOWNTIME
-# #  ✅ Only ONE backup per service (timestamp based)
-# #  ✅ Local tests before building images
-# #  ✅ Safe rollback per service
-# # ===================================================
-
-# # Colors
-# GREEN="\e[32m"
-# RED="\e[31m"
-# YELLOW="\e[33m"
-# CYAN="\e[36m"
-# NC="\e[0m"
-
-# # Config
-# SERVICES=("auth-service" "api-gateway" "data-service" "worker-service" "scheduler-service" "websocket-service" "graphql-service")
-# TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-
-# echo -e "${CYAN}\n=============================="
-# echo -e " 🔄 CI/CD PIPELINE STARTED"
-# echo -e "==============================${NC}"
-
-# # ===================================================
-# # 1️⃣ RUN LOCAL/UNIT TESTS BEFORE BUILD
-# # ===================================================
-# echo -e "${YELLOW}\n[1/5] 🧪 RUNNING LOCAL/UNIT TESTS...${NC}"
-
-# if ! npm test; then
-#     echo -e "${RED}❌ LOCAL/UNIT TESTS FAILED. PIPELINE STOPPED.${NC}"
-#     exit 1
-# fi
-
-# echo -e "${GREEN}✅ LOCAL/UNIT TESTS PASSED${NC}"
-
-# # ===================================================
-# # 2️⃣ BACKUP CURRENT RUNNING CONTAINERS
-# # ===================================================
-# echo -e "${YELLOW}\n[2/5] 🔐 BACKING UP CURRENT CONTAINERS...${NC}"
-
-# for service in "${SERVICES[@]}"; do
-#     RUNNING_ID=$(docker ps -qf "name=${service}")
-
-#     if [ -n "$RUNNING_ID" ]; then
-#         CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' $RUNNING_ID)
-#         BACKUP_IMAGE="$service:backup-$TIMESTAMP"
-
-#         # Remove old backups
-#         OLD_BACKUPS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "$service:backup-")
-#         for img in $OLD_BACKUPS; do
-#             docker rmi -f "$img"
-#             echo -e "${YELLOW}🧹 Removed old backup: $img${NC}"
-#         done
-
-#         # Create new backup
-#         docker tag "$CURRENT_IMAGE" "$BACKUP_IMAGE"
-#         echo -e "${CYAN}📦 Backup created: $BACKUP_IMAGE${NC}"
-#     else
-#         echo -e "${YELLOW}⚠️  $service was not running${NC}"
-#     fi
-# done
-
-# # ===================================================
-# # 3️⃣ BUILD NEW IMAGES
-# # ===================================================
-# echo -e "${YELLOW}\n[3/5] 🛠 BUILDING NEW IMAGES...${NC}"
-
-# if ! docker compose build; then
-#     echo -e "${RED}❌ BUILD FAILED. PIPELINE STOPPED.${NC}"
-#     exit 1
-# fi
-
-# echo -e "${GREEN}✅ BUILD SUCCESSFUL${NC}"
-
-# # ===================================================
-# # 4️⃣ DEPLOY SERVICES (ZERO-DOWNTIME, PER SERVICE)
-# # ===================================================
-# echo -e "${YELLOW}\n[4/5] 🚀 DEPLOYING SERVICES...${NC}"
-
-# for service in "${SERVICES[@]}"; do
-#     echo -e "${CYAN}→ Deploying: $service${NC}"
-
-#     if ! docker compose up -d --no-deps $service; then
-#         echo -e "${RED}❌ $service DEPLOYMENT FAILED. ROLLING BACK...${NC}"
-
-#         # Remove broken latest image
-#         docker rmi -f "$service:latest"
-
-#         # Restore backup
-#         BACKUP_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "$service:backup-")
-#         if [ -n "$BACKUP_IMAGE" ]; then
-#             docker tag "$BACKUP_IMAGE" "$service:latest"
-#             echo -e "${GREEN}✅ $service rolled back to backup image${NC}"
-
-#             # Restart container
-#             docker compose up -d --no-deps $service
-#             echo -e "${GREEN}✅ $service container restarted${NC}"
-#         else
-#             echo -e "${RED}⚠️ No backup found for $service, manual intervention needed${NC}"
-#         fi
-#     else
-#         echo -e "${GREEN}✅ $service deployed successfully${NC}"
-#     fi
-# done
-
-# # ===================================================
-# # 5️⃣ HEALTH CHECK & LOGS
-# # ===================================================
-# echo -e "${CYAN}\n⏱ Waiting for services to stabilize...${NC}"
-# sleep 5
-
-# docker compose ps
-
-# echo -e "${GREEN}\n🎉 DEPLOYMENT COMPLETE${NC}"
-# echo -e "${CYAN}📺 Live logs:${NC}"
-# docker compose logs -f
-
-
