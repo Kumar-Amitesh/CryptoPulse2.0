@@ -4,8 +4,8 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import logger from './utils/logger.utils.js';
-import { initializeWebSocket } from './websocket/handler.websocket.js';
-import { createAdapter } from '@socket.io/redis-adapter';
+// import { initializeWebSocket } from './websocket/handler.websocket.js';
+// import { createAdapter } from '@socket.io/redis-adapter';
 import { client as redisClient, subscriber as redisSubscriber } from './config/redis.config.js'; 
 import morgan from 'morgan';
 
@@ -63,18 +63,18 @@ const io = new Server(httpServer, {
 });
 
 // Configure Redis Adapter
-if (redisClient.isReady && redisSubscriber.isReady) {
-    io.adapter(createAdapter(redisClient, redisSubscriber));
-    logger.info('Socket.IO Redis Adapter configured.');
-} else {
-    // This is problematic - the adapter needs connected clients.
-    // Consider ensuring Redis connection happens before this point in index.js
-    // or adding retry logic here. For now, log a critical error.
-    logger.error('CRITICAL: Redis clients not ready when configuring Socket.IO adapter!');
-    // process.exit(1);
-}
+// if (redisClient.isReady && redisSubscriber.isReady) {
+//     io.adapter(createAdapter(redisClient, redisSubscriber));
+//     logger.info('Socket.IO Redis Adapter configured.');
+// } else {
+//     // This is problematic - the adapter needs connected clients.
+//     // Consider ensuring Redis connection happens before this point in index.js
+//     // or adding retry logic here. For now, log a critical error.
+//     logger.error('CRITICAL: Redis clients not ready when configuring Socket.IO adapter!');
+//     // process.exit(1);
+// }
 
-initializeWebSocket(io);
+// initializeWebSocket(io);
 
 // Global Error Handler for Express (won't catch WebSocket errors)
 app.use((err, req, res, next) => {
@@ -84,4 +84,4 @@ app.use((err, req, res, next) => {
     res.status(statusCode).json({ success: false, message: message });
 });
 
-export default httpServer;
+export { httpServer, io };

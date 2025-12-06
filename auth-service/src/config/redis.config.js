@@ -32,6 +32,6 @@ const connectRedis = async()=>{
         process.exit(1);
     }
 }
-connectRedis()
+// connectRedis()
 
-export { client };
+export { connectRedis, client };

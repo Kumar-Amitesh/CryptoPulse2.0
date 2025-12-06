@@ -12,7 +12,6 @@ import resolvers from './resolvers.graphql.js';
 
 import User from './models/Users.models.js';
 import morgan from 'morgan';
-import { mongo } from 'mongoose';
 
 dotenv.config({
     path:'../../.env' 
@@ -102,7 +101,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-app.get('/graphql/health', async(req, res) => {
+app.get('/health', async(req, res) => {
     try {
         if (mongoose.connection.readyState !== 1) {
             throw new Error('MongoDB not connected');

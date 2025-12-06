@@ -1,7 +1,19 @@
+import logger from './utils/logger.utils.js';
+import { connectRedis } from './config/redis.config.js';
+
+try {
+    await connectRedis();
+    logger.info('Redis connected successfully.');
+    console.log('Redis connected successfully.');
+} catch (err) {
+    logger.error('Failed to connect to Redis:', err);
+    console.error('Failed to connect to Redis:', err);
+    process.exit(1);
+}
+
 import app from './app.js';
 import dotenv from 'dotenv';
 import connectDB from './config/db.config.js';
-import logger from './utils/logger.utils.js';
 import mongoose from 'mongoose';
 import { client as redisClient } from './config/redis.config.js';
 import buildIndex from './utils/buildIndex.utils.js';

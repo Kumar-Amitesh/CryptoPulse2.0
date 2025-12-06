@@ -2,8 +2,10 @@ import { createClient } from 'redis'
 import logger from '../utils/logger.utils.js'
 import dotenv from 'dotenv'
 dotenv.config({
-    path: '../../.env'
+    path: '../../../.env'
 })
+
+console.log(`Connecting to Redis at ${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`);
 
 const client = createClient({
     username: process.env.REDIS_USERNAME,
@@ -38,6 +40,6 @@ const connectRedis = async()=>{
         process.exit(1);
     }
 }
-connectRedis()
+// connectRedis()
 
-export { client, subscriber };
+export { connectRedis, client, subscriber };

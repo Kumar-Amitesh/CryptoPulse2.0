@@ -1,7 +1,22 @@
-import httpServer from './app.js';
-import dotenv from 'dotenv';
 import logger from './utils/logger.utils.js';
+import { connectRedis } from './config/redis.config.js';
+
+try {
+    await connectRedis();
+    logger.info('Redis connected successfully.');
+    console.log('Redis connected successfully.');
+} catch (err) {
+    logger.error('Failed to connect to Redis:', err);
+    console.error('Failed to connect to Redis:', err);
+    process.exit(1);
+}
+
+
+import {httpServer, io} from './app.js';
+import dotenv from 'dotenv';
 import { client as redisClient, subscriber } from './config/redis.config.js';
+import { initializeWebSocket } from './websocket/handler.websocket.js';
+import { createAdapter } from '@socket.io/redis-adapter';
 
 dotenv.config({ path: '../../.env' }); 
 
@@ -11,6 +26,16 @@ let server;
 
 async function startServer() {
     try {
+
+        if (redisClient.isReady && subscriber.isReady) {
+            io.adapter(createAdapter(redisClient, subscriber));
+            logger.info('Socket.IO Redis Adapter configured.');
+        } else {
+            throw new Error('Redis connected but clients report not ready.');
+        }
+
+        initializeWebSocket(io);
+
         server = httpServer.listen(PORT, () => {
             logger.info(`WebSocket Server is running on port ${PORT}`);
             console.log(`WebSocket Server is running on port ${PORT}`);
