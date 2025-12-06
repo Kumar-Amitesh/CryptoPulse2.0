@@ -262,7 +262,7 @@ app.use('/graphql', userRateLimiter, graphqlServiceProxy);
 
 // Healthcheck endpoint
 app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: Date.now(), reqId: req.id }));
-;
+
 
 // Global Error Handler
 app.use((err, req, res, next) => {
