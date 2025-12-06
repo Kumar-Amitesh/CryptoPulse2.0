@@ -3,4 +3,5 @@
 *logs
 .dockerignore
 .husky
+*.log
 CryptoPulse.postman_collection.json
