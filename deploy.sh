@@ -33,7 +33,7 @@ else
     echo -e "${YELLOW}🔍 CHECKING FOR CHANGES (Git Diff)...${NC}"
     for service in "${SERVICES[@]}"; do
         # Check if the folder has changed in the last commit
-        if git diff --name-only HEAD~1 | grep "^$service/" > /dev/null; then
+        if git diff --name-only HEAD~1 -- "$service"  > /dev/null; then
             CHANGED_SERVICES+=("$service")
         fi
     done
