@@ -25,6 +25,8 @@ echo -e "${YELLOW}🔍 CHECKING FOR CHANGES (Git Diff)...${NC}"
         fi
     done
 
+echo -e "${CYAN}👉 Changed Services: ${CHANGED_SERVICES[*]}${NC}"
+
 if [ ${#CHANGED_SERVICES[@]} -eq 0 ]; then
     echo -e "${GREEN}✨ No changes detected. System is up to date.${NC}"
     exit 0
