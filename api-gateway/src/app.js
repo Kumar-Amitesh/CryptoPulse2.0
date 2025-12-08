@@ -58,7 +58,7 @@ app.use(
         else console.info(message.trim());
       },
     },
-    skip: (req) => req.path === "/metrics", // skip noisy endpoints
+    skip: (req) => req.path === "/health", // skip noisy endpoints
   })
 );
 
@@ -261,7 +261,7 @@ app.use('/graphql', userRateLimiter, graphqlServiceProxy);
 
 
 // Healthcheck endpoint
-app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: Date.now(), reqId: req.id }));
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: Date.now(), reqId: req.id }));
 
 
 // Global Error Handler
