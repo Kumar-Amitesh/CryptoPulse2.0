@@ -30,7 +30,7 @@ fi
 
 for service in "${VALID_SERVICES[@]}"; do
     echo -e "\n${CYAN}→ Quick lint: $service${NC}"
-    (cd "$service" && npm run lint) || exit 1
+    (cd "$service" && npm test) || exit 1
 done
 
 echo -e "${GREEN}✅ [PRE-COMMIT] All checks passed.${NC}"
