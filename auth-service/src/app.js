@@ -42,7 +42,7 @@ app.use(
 
 const limiter = rateLimit({
     windowMs: 60 * 1000,  
-    limit:40,
+    limit:50,
     message: 'Too many requests from this IP, please try again later.',
     statusCode: 429
 })
