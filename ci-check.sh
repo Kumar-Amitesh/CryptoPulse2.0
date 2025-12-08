@@ -15,15 +15,29 @@ SERVICES=("auth-service" "api-gateway" "data-service" "worker-service" "schedule
 
 CHANGED_SERVICES=()
 
+# echo -e "${YELLOW}🔍 CHECKING FOR CHANGES (Git Diff)...${NC}"
+#     for service in "${SERVICES[@]}"; do
+#         # Check if the folder has changed in the last commit
+#         if git diff --name-only HEAD~1 -- "$service"  > /dev/null; then
+#         # Check staged changes for pre-commit hook
+#         # if git diff --cached --name-only --diff-filter=ACMR | grep "^$service/" > /dev/null; then
+#             CHANGED_SERVICES+=("$service")
+#         fi
+#     done
+
 echo -e "${YELLOW}🔍 CHECKING FOR CHANGES (Git Diff)...${NC}"
-    for service in "${SERVICES[@]}"; do
-        # Check if the folder has changed in the last commit
-        if git diff --name-only HEAD~1 -- "$service"  > /dev/null; then
-        # Check staged changes for pre-commit hook
-        # if git diff --cached --name-only --diff-filter=ACMR | grep "^$service/" > /dev/null; then
-            CHANGED_SERVICES+=("$service")
+
+CHANGED_SERVICES=()
+
+for file in $(git diff --name-only HEAD~1 HEAD); do
+    service=$(echo "$file" | cut -d/ -f1)
+
+    for s in "${SERVICES[@]}"; do
+        if [[ "$service" == "$s" && ! " ${CHANGED_SERVICES[*]} " =~ " $s " ]]; then
+            CHANGED_SERVICES+=("$s")
         fi
     done
+done
 
 echo -e "${CYAN}👉 Changed Services: ${CHANGED_SERVICES[*]}${NC}"
 
@@ -47,8 +61,6 @@ fi
 #     fi
 # done
 
-
-echo -e "${CYAN}👉 Target Services: ${CHANGED_SERVICES[*]}${NC}"
 
 # RUN LOCAL / UNIT TESTS
 
