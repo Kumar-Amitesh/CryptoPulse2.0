@@ -18,9 +18,9 @@ CHANGED_SERVICES=()
 echo -e "${YELLOW}🔍 CHECKING FOR CHANGES (Git Diff)...${NC}"
     for service in "${SERVICES[@]}"; do
         # Check if the folder has changed in the last commit
-        # if git diff --name-only HEAD~1 | grep "^$service/" > /dev/null; then
+        if git diff --name-only HEAD~1 -- "$service"  > /dev/null; then
         # Check staged changes for pre-commit hook
-        if git diff --cached --name-only --diff-filter=ACMR | grep "^$service/" > /dev/null; then
+        # if git diff --cached --name-only --diff-filter=ACMR | grep "^$service/" > /dev/null; then
             CHANGED_SERVICES+=("$service")
         fi
     done
