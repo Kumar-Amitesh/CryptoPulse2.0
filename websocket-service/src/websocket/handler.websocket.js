@@ -74,18 +74,17 @@ export function initializeWebSocket(io) {
             const updateData = JSON.parse(message); // Expecting { coinId: 'bitcoin', data: { updated coin object } }
              logger.debug(`WS: Received coin update from Redis: ${updateData.coinId}`);
 
-            // --- Logic to determine who needs this update ---
+            // determine who needs this update
 
-            // Option 1: Broadcast to everyone (simple, less efficient)
+            // Option 1: Broadcast to everyone
             // io.emit('coinUpdate', updateData);
 
             // Option 2: Broadcast only to users watching this coin (Requires tracking user watchlist)
-            // This is more complex. A simpler approach is to let the frontend filter.
+            // simpler approach is to let the frontend filter.
 
             // Option 3: Broadcast based on rooms (if users join coin-specific rooms)
             // io.to(`coin:${updateData.coinId}`).emit('coinUpdate', updateData);
 
-            // general broadcast, frontend filters
             // io.emit('coinUpdate', updateData); // Send { coinId: '...', data: {...} }
             setTimeout(() => {
                 io.emit('coinUpdate', updateData); // Send { coinId: '...', data: {...} }
