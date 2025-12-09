@@ -31,6 +31,9 @@ const getPaginatedCoins = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, [], 'No coins found for this page.'));
   }
 
+  redisClient.set(`response-cache:${req.originalUrl}`, JSON.stringify(
+    { statusCode: 200, body: coinData }, { EX: 120 }
+  ))
 
   return res
     .status(200)
@@ -53,6 +56,10 @@ const getCoinById = asyncHandler(async (req, res) => {
   }
 
   const coinData = JSON.parse(coinDataJson);
+
+  redisClient.set(`response-cache:${req.originalUrl}`, JSON.stringify(
+    { statusCode: 200, body: coinData }, { EX: 120 }
+  ))
 
   return res
     .status(200)
@@ -159,6 +166,9 @@ const getCoinHistory = asyncHandler(async (req, res) => {
          }
     }
 
+    redisClient.set(`response-cache:${req.originalUrl}`, JSON.stringify(
+        { statusCode: 200, body: historicalData }, { EX: 120 }
+    ))
 
     return res.status(200).json(new ApiResponse(200, historicalData, `Historical data for ${coinId} fetched successfully`));
 });
