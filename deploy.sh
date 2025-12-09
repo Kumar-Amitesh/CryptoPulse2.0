@@ -14,8 +14,8 @@ CYAN="\e[36m"
 NC="\e[0m"
 
 # CONFIG
-FIXED_PORT_SERVICES=("api-gateway" "redis")
-SERVICES=("auth-service" "data-service" "api-gateway" "graphql-service" "websocket-service" "worker-service" "scheduler-service" )
+FIXED_PORT_SERVICES=("api-gateway" "redis" "mongo")
+# SERVICES=("auth-service" "data-service" "api-gateway" "graphql-service" "websocket-service" "worker-service" "scheduler-service" )
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
 echo -e "${CYAN}\n=============================="
@@ -31,12 +31,21 @@ if [[ "$1" == "--init" ]]; then
     CHANGED_SERVICES=("${SERVICES[@]}")
 else
     echo -e "${YELLOW}🔍 CHECKING FOR CHANGES (Git Diff)...${NC}"
-    for service in "${SERVICES[@]}"; do
-        # Check if the folder has changed in the last commit
-        if git diff --name-only HEAD~1 -- "$service"  > /dev/null; then
-            CHANGED_SERVICES+=("$service")
+    # Find all changed top-level folders since last push
+    CHANGED_FOLDERS=($(git diff --name-only origin/main..HEAD | cut -d/ -f1 | sort -u))
+
+    for folder in "${CHANGED_FOLDERS[@]}"; do
+        if [[ " ${SERVICES[*]} " =~ " ${folder} " ]]; then
+            CHANGED_SERVICES+=("$folder")
         fi
     done
+    
+    # for service in "${SERVICES[@]}"; do
+    #     # Check if the folder has changed in the last commit
+    #     if git diff --name-only HEAD~1 -- "$service"  > /dev/null; then
+    #         CHANGED_SERVICES+=("$service")
+    #     fi
+    # done
 fi
 
 if [ ${#CHANGED_SERVICES[@]} -eq 0 ]; then
@@ -90,19 +99,108 @@ for service in "${CHANGED_SERVICES[@]}"; do
     echo -e "${CYAN}🔄 Updating: $service${NC}"
 
     # CHECK IF SERVICE IS FIXED-PORT (Standard Deploy) OR SCALABLE (Blue-Green)
-    if [[ " ${FIXED_PORT_SERVICES[*]} " =~ " ${service} " ]]; then
-        # STANDARD DEPLOY
-        echo -e "${YELLOW}⚠️  $service has fixed ports. Using Standard Recreate (brief downtime)...${NC}"
+    # if [[ " ${FIXED_PORT_SERVICES[*]} " =~ " ${service} " ]]; then
+    #     # STANDARD DEPLOY
+    #     echo -e "${YELLOW}⚠️  $service has fixed ports. Using Standard Recreate (brief downtime)...${NC}"
         
-        # Recreate container
-        if docker compose up -d --no-deps --force-recreate "$service"; then
-             # Get the ID of the container we just started
-             NEW_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
-        else
-             echo -e "${RED}❌ Failed to deploy $service${NC}"
-             FAILED+=("$service")
-             continue
+    #     # Recreate container
+    #     if docker compose up -d --no-deps --force-recreate "$service"; then
+    #          # Get the ID of the container we just started
+    #          NEW_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
+    #     else
+    #          echo -e "${RED}❌ Failed to deploy $service${NC}"
+    #          FAILED+=("$service")
+    #          continue
+    #     fi
+
+    if [[ " ${FIXED_PORT_SERVICES[*]} " =~ " ${service} " ]]; then
+
+        echo -e "${YELLOW}⚠️  $service has fixed ports. Performing backup + safe recreate...${NC}"
+
+        # Old container ID
+        OLD_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
+
+        if [ -n "$OLD_CONTAINER_ID" ]; then
+            BACKUP_NAME="${service}_backup_${TIMESTAMP}"
+
+            echo -e "${CYAN}📦 Creating backup: $BACKUP_NAME${NC}"
+            
+            # Stop old container
+            docker stop "$OLD_CONTAINER_ID" >/dev/null 2>&1
+            
+            # Rename using Docker’s container rename
+            docker rename "$OLD_CONTAINER_ID" "$BACKUP_NAME"
         fi
+
+        echo -e "${CYAN}🚀 Starting new instance of $service...${NC}"
+
+        if docker compose up -d --no-deps --force-recreate "$service"; then
+            NEW_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
+        else
+            echo -e "${RED}❌ Failed to start new instance. Restoring backup...${NC}"
+            
+            if [ -n "$BACKUP_NAME" ]; then
+                docker rename "$BACKUP_NAME" "$service"
+                docker start "$service"
+            fi
+
+            FAILED+=("$service")
+            continue
+        fi
+
+
+        ### HEALTH CHECK
+        echo -e "${YELLOW}⏳ Health checking new container ($NEW_CONTAINER_ID)...${NC}"
+
+        HEALTHY="false"
+        for i in {1..15}; do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$NEW_CONTAINER_ID" 2>/dev/null)
+            STATE=$(docker inspect --format='{{.State.Status}}' "$NEW_CONTAINER_ID" 2>/dev/null)
+
+            if [ "$STATUS" == "healthy" ] || [ "$STATE" == "running" ]; then
+                HEALTHY="true"
+                break
+            fi
+
+            if [[ -z "$STATUS" || "$STATUS" == "<no value>" ]]; then
+                if [ "$STATE" == "running" ]; then 
+                    HEALTHY="true"
+                    break
+                fi
+            fi
+
+            echo -n "."
+            sleep 3
+        done
+        echo ""
+
+        if [ "$HEALTHY" == "true" ]; then
+            echo -e "${GREEN}✅ $service is HEALTHY.${NC}"
+            
+            # delete backup if healthy
+            if [ -n "$BACKUP_NAME" ]; then
+                echo -e "${YELLOW}🧹 Removing backup container...${NC}"
+                docker rm "$BACKUP_NAME" >/dev/null 2>&1
+            fi
+
+            DEPLOYED+=("$service")
+
+        else
+            echo -e "${RED}❌ New container unhealthy. Rolling back...${NC}"
+
+            # remove broken
+            docker stop "$NEW_CONTAINER_ID" >/dev/null 2>&1
+            docker rm "$NEW_CONTAINER_ID" >/dev/null 2>&1
+
+            # restore backup
+            docker rename "$BACKUP_NAME" "$service"
+            docker start "$service"
+
+            FAILED+=("$service")
+        fi
+
+        continue
+    fi
 
     else
         # BLUE-GREEN DEPLOY (Scale Up -> Health Check -> Scale Down)
