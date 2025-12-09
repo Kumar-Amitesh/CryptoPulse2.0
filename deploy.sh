@@ -34,11 +34,12 @@ else
     # Find all changed top-level folders since last push
     CHANGED_FOLDERS=($(git diff --name-only origin/main..HEAD | cut -d/ -f1 | sort -u))
 
-    for folder in "${CHANGED_FOLDERS[@]}"; do
-        if [[ " ${SERVICES[*]} " =~ " ${folder} " ]]; then
-            CHANGED_SERVICES+=("$folder")
+    for service in "${CHANGED_FOLDERS[@]}"; do
+        if [ -d "$service" ] && [ -f "$service/package.json" ]; then
+            CHANGED_SERVICES+=("$service")
         fi
     done
+    echo -e "${CYAN}👉 Changed Services: ${CHANGED_SERVICES[*]}${NC}"
     
     # for service in "${SERVICES[@]}"; do
     #     # Check if the folder has changed in the last commit
