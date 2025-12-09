@@ -36,7 +36,7 @@ app.use(
         else console.info(message.trim());
       },
     },
-    skip: (req) => req.path === "/metrics", 
+    skip: (req) => req.path === "/api/v1/users/health", 
   })
 );
 
