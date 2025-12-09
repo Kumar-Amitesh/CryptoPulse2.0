@@ -32,6 +32,7 @@ services:
       ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
     depends_on:
       - mongo
+    command: ["--quiet"]
 
   api-gateway:
     build: ./api-gateway
@@ -44,6 +45,12 @@ services:
       - data-service
       - websocket-service
       - redis
+      - mongo
+    healthcheck:
+      test: ["CMD", "curl", "-f", "${API_GATEWAY_URL}/health"]
+      interval: 120s
+      timeout: 5s
+      retries: 3
 
   auth-service:
     build: ./auth-service
