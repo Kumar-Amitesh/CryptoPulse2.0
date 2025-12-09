@@ -12,6 +12,7 @@ import { client as redisClient } from './config/redis.config.js';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import cacheMiddleware from './middleware/cache.middleware.js';
 import morgan from 'morgan';
+import mongoose from 'mongoose';
 
 dotenv.config({
     path:'../../.env' 
@@ -100,6 +101,11 @@ const generalLimiter = rateLimit({
     store: new RedisStore({
         sendCommand: (...args) => redisClient.sendCommand(args), // Connect store to redis client
     }), // Configure RedisStore for distributed environments
+    skip: (req) => {
+        // Skip rate limiting for health check endpoint
+        if (req.path === '/health') return true;
+        return false;
+    }
 });
 
 app.use(generalLimiter);
@@ -261,7 +267,21 @@ app.use('/graphql', userRateLimiter, graphqlServiceProxy);
 
 
 // Healthcheck endpoint
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: Date.now(), reqId: req.id }));
+app.get('/health', async(req, res) => {
+    try{
+        // Check Redis
+        await redisClient.ping();
+        // Check MongoDB
+        if (mongoose.connection.readyState !== 1) {
+          throw new Error('MongoDB not connected');
+        }
+        return res.status(200).json({ status: 'UP', services: { redis: 'UP', mongodb: 'UP' } });
+    }catch(err){
+        logger.error('Health check failed:', err);
+        return res.status(503).json({ status: 'DOWN', error: err.message });
+    }
+        
+});
 
 
 // Global Error Handler
