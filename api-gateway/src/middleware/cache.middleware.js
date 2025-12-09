@@ -27,39 +27,11 @@ const cacheMiddleware = async (req, res, next) => {
 
             // Send the cached response
             res.setHeader('X-Cache-Status', 'HIT');
-            return res.status(statusCode).send(body);
+            return res.status(statusCode).json(body);
         }
 
         logger.debug(`[Cache Miss] for ${req.originalUrl}`);
         res.setHeader('X-Cache-Status', 'MISS');
-
-        // Wrap response to capture body
-        const originalSend = res.send;
-
-        let capturedResponse = null; 
-
-        res.send = function (body) {
-            // Only cache successful 200 responses
-            if (res.statusCode === 200) {
-                // Ensure the body is a string before storing (Express/Proxy might pass Buffer or object)
-                const bodyString = typeof body === 'object' ? JSON.stringify(body) : body.toString();
-
-                capturedResponse = {
-                    statusCode: res.statusCode,
-                    body: bodyString 
-                };
-
-                // Store in Redis (Do not await - perform asynchronously)
-                redisClient.set(cacheKey, JSON.stringify(capturedResponse), { EX: CACHE_EXPIRY_SECONDS })
-                    .catch(err => logger.error(`[Cache Set Error] for ${cacheKey}: ${err.message}`));
-            } else {
-                 logger.debug(`[Cache Skip] Status ${res.statusCode} for ${req.originalUrl}. Not caching.`);
-            }
-
-            // Restore original res.send and call it to send the response to the client
-            res.send = originalSend;
-            return res.send(body);
-        };
 
         // Continue to downstream handler (proxy)
         next();
