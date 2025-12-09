@@ -12,7 +12,7 @@ NC="\e[0m"
 echo -e "${YELLOW}🔍 Auto-detecting changed services (Git Diff)...${NC}"
 
 # Auto detect changed top-level folders
-CHANGED_SERVICES=($(git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u))
+CHANGED_SERVICES=($(git diff --name-only origin/main..HEAD | cut -d/ -f1 | sort -u))
 
 # Filter only folders that contain package.json (actual services)
 VALID_SERVICES=()
@@ -52,8 +52,6 @@ for service in "${VALID_SERVICES[@]}"; do
     PIDS+=($!)
 done
 
-
-# Wait for all parallel jobs
 FAIL=0
 for pid in "${PIDS[@]}"; do
     wait $pid || FAIL=1
