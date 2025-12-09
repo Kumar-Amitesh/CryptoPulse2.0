@@ -201,7 +201,6 @@ for service in "${CHANGED_SERVICES[@]}"; do
         fi
 
         continue
-    fi
 
     else
         # BLUE-GREEN DEPLOY (Scale Up -> Health Check -> Scale Down)
