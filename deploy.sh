@@ -298,4 +298,4 @@ else
 fi
 
 echo -e "\n${CYAN}📺 Tail logs with: docker compose logs -f${NC}"
-docker compose logs -f
+# docker compose logs -f
