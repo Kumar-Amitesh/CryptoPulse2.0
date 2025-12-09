@@ -72,6 +72,7 @@ const cacheCoinsData = async (allCoinData) => {
 
     try {
         await pipeline.exec();
+        redisClient.del("response-cache:*"); // Invalidate all cached responses
         console.log(
             `Successfully cached ${allCoinData.length} individual coins and 2 page data keys.`
         );
