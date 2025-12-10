@@ -47,7 +47,7 @@ services:
       - mongo
     healthcheck:
       test: ["CMD", "curl", "-f", "${API_GATEWAY_URL}/health"]
-      interval: 120s
+      interval: 10s
       timeout: 5s
       retries: 3
 
@@ -60,7 +60,7 @@ services:
       - mongo
     healthcheck:
       test: ["CMD", "curl", "-f", "${AUTH_SERVICE_URL}/api/v1/users/health"]
-      interval: 120s
+      interval: 10s
       timeout: 5s
       retries: 3
 
@@ -74,7 +74,7 @@ services:
       - mongo
     healthcheck:
       test: ["CMD", "curl", "-f", "${DATA_SERVICE_URL}/api/v1/data/health"]
-      interval: 120s
+      interval: 10s
       timeout: 5s
       retries: 3
 
@@ -90,7 +90,7 @@ services:
       - mongo
     healthcheck:
       test: ["CMD", "curl", "-f", "${GRAPHQL_SERVICE_URL}/health"]
-      interval: 120s
+      interval: 10s
       timeout: 5s
       retries: 3
 
@@ -118,7 +118,7 @@ services:
       - mongo
     healthcheck:
       test: ["CMD", "curl", "-f", "${WEBSOCKET_SERVICE_URL}/api/v1/websocket/health"]
-      interval: 120s
+      interval: 10s
       timeout: 5s
       retries: 3
 
