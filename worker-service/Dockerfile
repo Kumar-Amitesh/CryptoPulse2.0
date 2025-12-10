@@ -1,6 +1,6 @@
 FROM node:20-slim
 
-WORKDIR /api-gateway
+WORKDIR /worker-service
 
 COPY package*.json ./
 
