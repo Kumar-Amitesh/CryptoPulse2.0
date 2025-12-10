@@ -18,6 +18,9 @@ FIXED_PORT_SERVICES=("api-gateway" "redis" "mongo")
 # SERVICES=("auth-service" "data-service" "api-gateway" "graphql-service" "websocket-service" "worker-service" "scheduler-service" )
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
+MAX_WAIT=$((120 + 40))   # 120s interval + 40s buffer
+ATTEMPTS=$((MAX_WAIT / 4))
+
 echo -e "${CYAN}\n=============================="
 echo -e " 🔄 CI/CD PIPELINE STARTED"
 echo -e "==============================${NC}"
@@ -99,28 +102,25 @@ for service in "${CHANGED_SERVICES[@]}"; do
     echo -e "\n${CYAN}------------------------------------------------${NC}"
     echo -e "${CYAN}🔄 Updating: $service${NC}"
 
-    # CHECK IF SERVICE IS FIXED-PORT (Standard Deploy) OR SCALABLE (Blue-Green)
-    # if [[ " ${FIXED_PORT_SERVICES[*]} " =~ " ${service} " ]]; then
-    #     # STANDARD DEPLOY
-    #     echo -e "${YELLOW}⚠️  $service has fixed ports. Using Standard Recreate (brief downtime)...${NC}"
-        
-    #     # Recreate container
-    #     if docker compose up -d --no-deps --force-recreate "$service"; then
-    #          # Get the ID of the container we just started
-    #          NEW_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
-    #     else
-    #          echo -e "${RED}❌ Failed to deploy $service${NC}"
-    #          FAILED+=("$service")
-    #          continue
-    #     fi
+    # --- Capture old container + image info BEFORE any changes ---
+    OLD_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
+    OLD_IMAGE_ID=""
+    IMAGE_NAME=""
+
+    if [ -n "$OLD_CONTAINER_ID" ]; then
+        OLD_IMAGE_ID=$(docker inspect --format='{{.Image}}' "$OLD_CONTAINER_ID" 2>/dev/null || true)
+        IMAGE_NAME=$(docker inspect --format='{{.Config.Image}}' "$OLD_CONTAINER_ID" 2>/dev/null || true)
+    fi
+
+    NEW_CONTAINER_ID=""
+    NEW_IMAGE_ID=""
 
     if [[ " ${FIXED_PORT_SERVICES[*]} " =~ " ${service} " ]]; then
 
         echo -e "${YELLOW}⚠️  $service has fixed ports. Performing backup + safe recreate...${NC}"
 
-        # Old container ID
-        OLD_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
-
+        # Use previously captured OLD_CONTAINER_ID
+        BACKUP_NAME=""
         if [ -n "$OLD_CONTAINER_ID" ]; then
             BACKUP_NAME="${service}_backup_${TIMESTAMP}"
 
@@ -137,6 +137,10 @@ for service in "${CHANGED_SERVICES[@]}"; do
 
         if docker compose up -d --no-deps --force-recreate "$service"; then
             NEW_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
+            # Capture new image ID now for possible rollback
+            if [ -n "$NEW_CONTAINER_ID" ]; then
+                NEW_IMAGE_ID=$(docker inspect --format='{{.Image}}' "$NEW_CONTAINER_ID" 2>/dev/null || true)
+            fi
         else
             echo -e "${RED}❌ Failed to start new instance. Restoring backup...${NC}"
             
@@ -184,18 +188,50 @@ for service in "${CHANGED_SERVICES[@]}"; do
                 docker rm "$BACKUP_NAME" >/dev/null 2>&1
             fi
 
+            # --- OLD IMAGE CLEANUP (if not used anywhere) ---
+            if [ -n "$OLD_IMAGE_ID" ]; then
+                IN_USE_OLD=$(docker ps -a --filter "ancestor=$OLD_IMAGE_ID" -q | wc -l)
+                if [ "$IN_USE_OLD" -eq 0 ]; then
+                    echo -e "${YELLOW}🧹 Removing old image: $OLD_IMAGE_ID${NC}"
+                    docker rmi "$OLD_IMAGE_ID" >/dev/null 2>&1 || true
+                else
+                    echo -e "${YELLOW}ℹ️ Old image still in use by other containers. Skipping image removal.${NC}"
+                fi
+            fi
+
             DEPLOYED+=("$service")
 
         else
             echo -e "${RED}❌ New container unhealthy. Rolling back...${NC}"
 
-            # remove broken
-            docker stop "$NEW_CONTAINER_ID" >/dev/null 2>&1
-            docker rm "$NEW_CONTAINER_ID" >/dev/null 2>&1
+            # remove broken container
+            if [ -n "$NEW_CONTAINER_ID" ]; then
+                docker stop "$NEW_CONTAINER_ID" >/dev/null 2>&1
+                docker rm "$NEW_CONTAINER_ID" >/dev/null 2>&1
+            fi
+
+            # remove broken image if safe
+            if [ -n "$NEW_IMAGE_ID" ]; then
+                IN_USE_NEW=$(docker ps -a --filter "ancestor=$NEW_IMAGE_ID" -q | wc -l)
+                if [ "$IN_USE_NEW" -eq 0 ]; then
+                    echo -e "${YELLOW}🧹 Removing broken image: $NEW_IMAGE_ID${NC}"
+                    docker rmi "$NEW_IMAGE_ID" >/dev/null 2>&1 || true
+                else
+                    echo -e "${YELLOW}ℹ️ Broken image still referenced. Skipping image removal.${NC}"
+                fi
+            fi
 
             # restore backup
-            docker rename "$BACKUP_NAME" "$service"
-            docker start "$service"
+            if [ -n "$BACKUP_NAME" ]; then
+                docker rename "$BACKUP_NAME" "$service"
+                docker start "$service"
+            fi
+
+            # re-tag OLD image as latest for this service
+            if [ -n "$OLD_IMAGE_ID" ] && [ -n "$IMAGE_NAME" ]; then
+                echo -e "${YELLOW}🔁 Re-tagging old image as latest: $IMAGE_NAME${NC}"
+                docker tag "$OLD_IMAGE_ID" "$IMAGE_NAME"
+            fi
 
             FAILED+=("$service")
         fi
@@ -206,7 +242,7 @@ for service in "${CHANGED_SERVICES[@]}"; do
         # BLUE-GREEN DEPLOY (Scale Up -> Health Check -> Scale Down)
         echo -e "${GREEN}✅ $service is scalable. Using Zero-Downtime Blue-Green...${NC}"
 
-        OLD_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
+        # OLD_CONTAINER_ID already captured earlier
 
         # Scale UP to 2
         if ! docker compose up -d --scale "$service"=2 --no-recreate "$service"; then
@@ -220,6 +256,11 @@ for service in "${CHANGED_SERVICES[@]}"; do
             NEW_CONTAINER_ID=$(docker compose ps -q "$service" | grep -v "$OLD_CONTAINER_ID" | head -n 1)
         else
             NEW_CONTAINER_ID=$(docker compose ps -q "$service" | head -n 1)
+        fi
+
+        # Capture new image ID now for possible rollback
+        if [ -n "$NEW_CONTAINER_ID" ]; then
+            NEW_IMAGE_ID=$(docker inspect --format='{{.Image}}' "$NEW_CONTAINER_ID" 2>/dev/null || true)
         fi
     fi
 
@@ -264,6 +305,17 @@ for service in "${CHANGED_SERVICES[@]}"; do
             # Reset scale to 1
             docker compose up -d --scale "$service"=1 --no-recreate "$service" > /dev/null 2>&1
         fi
+
+        # --- OLD IMAGE CLEANUP (if not used anywhere) ---
+        if [ -n "$OLD_IMAGE_ID" ]; then
+            IN_USE_OLD=$(docker ps -a --filter "ancestor=$OLD_IMAGE_ID" -q | wc -l)
+            if [ "$IN_USE_OLD" -eq 0 ]; then
+                echo -e "${YELLOW}🧹 Removing old image: $OLD_IMAGE_ID${NC}"
+                docker rmi "$OLD_IMAGE_ID" >/dev/null 2>&1 || true
+            else
+                echo -e "${YELLOW}ℹ️ Old image still in use by other containers. Skipping image removal.${NC}"
+            fi
+        fi
         
         DEPLOYED+=("$service")
     else
@@ -271,8 +323,27 @@ for service in "${CHANGED_SERVICES[@]}"; do
         
         # Stop the unhealthy container
         echo -e "${YELLOW}TB Rolling back (Killing unhealthy container)...${NC}"
-        docker stop "$NEW_CONTAINER_ID" > /dev/null 2>&1
-        docker rm "$NEW_CONTAINER_ID" > /dev/null 2>&1
+        if [ -n "$NEW_CONTAINER_ID" ]; then
+            docker stop "$NEW_CONTAINER_ID" > /dev/null 2>&1
+            docker rm "$NEW_CONTAINER_ID" > /dev/null 2>&1
+        fi
+
+        # Remove new image if safe
+        if [ -n "$NEW_IMAGE_ID" ]; then
+            IN_USE_NEW=$(docker ps -a --filter "ancestor=$NEW_IMAGE_ID" -q | wc -l)
+            if [ "$IN_USE_NEW" -eq 0 ]; then
+                echo -e "${YELLOW}🧹 Removing broken image: $NEW_IMAGE_ID${NC}"
+                docker rmi "$NEW_IMAGE_ID" >/dev/null 2>&1 || true
+            else
+                echo -e "${YELLOW}ℹ️ Broken image still referenced. Skipping image removal.${NC}"
+            fi
+        fi
+
+        # Re-tag old image as latest BEFORE scaling old containers back
+        if [ -n "$OLD_IMAGE_ID" ] && [ -n "$IMAGE_NAME" ]; then
+            echo -e "${YELLOW}🔁 Re-tagging old image as latest: $IMAGE_NAME${NC}"
+            docker tag "$OLD_IMAGE_ID" "$IMAGE_NAME"
+        fi
         
         # Restore old container scale
         docker compose up -d --scale "$service"=1 --no-recreate "$service"
