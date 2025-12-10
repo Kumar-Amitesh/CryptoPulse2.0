@@ -1,37 +1,59 @@
 import { client as redisClient } from '../config/redis.config.js';
 import { coinTrie } from './Trie.utils.js';
 import logger from './logger.utils.js';
+import PriceSnapshot from '../models/PriceSnapshot.models.js';
 
 export const loadTrieFromCache = async () => {
     try {
         // Assuming worker caches 'page:1:data', 'page:2:data', etc.
-        // You might want to adjust how many pages you fetch based on your needs
         const pageKeys = await redisClient.keys('page:*:data');
         
         // Fetch all pages in parallel
         const results = await Promise.all(pageKeys.map(key => redisClient.get(key)));
 
+        
+
         let count = 0;
-        results.forEach(pageJson => {
-            if (!pageJson) return;
-            const coins = JSON.parse(pageJson);
-            
-            coins.forEach(coin => {
+        if(results.length === 0) {
+            logger.warn('No cached pages found in Redis to build Trie.');
+            const result_db = await PriceSnapshot.find();
+            result_db.forEach(coin => {
                 const searchData = {
-                    id: coin.id,
+                    id: coin.coinId,
                     name: coin.name,
                     symbol: coin.symbol,
                     image: coin.image,
-                    current_price: coin.current_price
+                    // current_price: coin.current_price
                 };
-
                 // Insert Name (e.g. "Bitcoin")
                 coinTrie.insert(coin.name, searchData);
                 // Insert Symbol (e.g. "BTC")
                 coinTrie.insert(coin.symbol, searchData);
                 count++;
             });
-        });
+        }
+        else{
+            results.forEach(pageJson => {
+                if (!pageJson) return;
+                const coins = JSON.parse(pageJson);
+                
+                coins.forEach(coin => {
+                    const searchData = {
+                        id: coin.id,
+                        name: coin.name,
+                        symbol: coin.symbol,
+                        image: coin.image,
+                        // current_price: coin.current_price
+                    };
+
+                    // Insert Name (e.g. "Bitcoin")
+                    coinTrie.insert(coin.name, searchData);
+                    // Insert Symbol (e.g. "BTC")
+                    coinTrie.insert(coin.symbol, searchData);
+                    count++;
+                });
+            });
+        }
 
         logger.info(`Trie populated with ${count} search entries.`);
     } catch (error) {

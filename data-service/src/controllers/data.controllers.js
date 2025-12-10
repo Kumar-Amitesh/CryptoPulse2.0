@@ -51,11 +51,18 @@ const getCoinById = asyncHandler(async (req, res) => {
 
   const coinDataJson = await redisClient.get(coinKey);
 
-  if (!coinDataJson) {
-    throw new ApiError(404, 'Coin not found or data is being updated.');
-  }
+  let coinData;
 
-  const coinData = JSON.parse(coinDataJson);
+  if (!coinDataJson) {
+    coinData = await PriceSnapshot.findOne({ coinId: id }).lean();
+
+    if (!coinData) {
+      throw new ApiError(404, "Coin not found in Redis or Database.");
+    }
+  }
+  else{
+    coinData = JSON.parse(coinDataJson);
+  }
 
   redisClient.set(`response-cache:${req.originalUrl}`, JSON.stringify(
     { statusCode: 200, body: coinData }, { EX: 120 }
@@ -183,6 +190,10 @@ const searchCoins = asyncHandler(async (req, res) => {
     // Use the Trie to search
     // Limit to 10 results for specific suggestions
     const results = coinTrie.search(query, 10);
+
+    redisClient.set(`response-cache:${req.originalUrl}`, JSON.stringify(
+        { statusCode: 200, body: results }, { EX: 60 }
+    ))
 
     return res
         .status(200)
