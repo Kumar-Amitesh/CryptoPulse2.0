@@ -28,9 +28,25 @@ const PORT = 8002;
 
 connectDB()
 .then(() => {
-    server = app.listen(PORT, () => {
+    server = app.listen(PORT, async () => {
         logger.info(`Server is running on port ${PORT}`);
         console.log(`Server is running on port ${PORT}`);
+
+        try {
+            await buildIndex();
+            logger.info("Initial index build completed.");
+        } catch (err) {
+            logger.error("Error in initial index build:", err);
+        }
+
+        setTimeout(async () => {
+            try {
+                await buildIndex();
+                logger.info("Scheduled index rebuild completed.");
+            } catch (err) {
+                logger.error("Error in scheduled index rebuild:", err);
+            }
+        }, 120000);
     })
 
     server.on('error', (err) => {
@@ -44,16 +60,6 @@ connectDB()
     console.error("MONGO db connection failed !!! ", err);
     process.exit(1);
 })
-
-// Initialize build search index
-setTimeout(async () => {
-    try {
-        await buildIndex();
-    } catch (err) {
-        logger.error('Error building index:', err);
-        console.error('Error building index:', err);
-    }
-}, 140000); 
 
 
 // Graceful Shutdown Function
