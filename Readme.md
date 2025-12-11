@@ -8,7 +8,7 @@ CryptoPulse is a comprehensive **cryptocurrency tracking and portfolio managemen
 - View analytics (e.g., popular coins)
 - Consume data via both REST and GraphQL
 - Receive live updates via WebSockets
-- **Trace requests end-to-end using a UUID-based request ID propagated across all services**
+- Trace requests end-to-end using a UUID-based request ID propagated across all services
 
 ---
 
