@@ -1,6 +1,6 @@
 # CryptoPulse
 
-CryptoPulse is a comprehensive **cryptocurrency tracking and portfolio management** application built using a **microservices architecture**. It allows users to:
+CryptoPulse is a microservices-based backend architecture designed to experiment with real-world system design patterns, resilience, and observability, using cryptocurrency data as a high-frequency input. It allows users to:
 
 - Register and log in (email/password + Google OAuth 2.0)
 - View real-time cryptocurrency data
