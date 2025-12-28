@@ -9,18 +9,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     strategy:
-      # Matrix strategy runs a separate instance of the job for each service
       matrix:
-        service: [
-          "api-gateway", 
-          "auth-service", 
-          "data-service", 
-          "worker-service", 
-          "scheduler-service", 
-          "websocket-service", 
-          "graphql-service"
-        ]
+        service:
+          - api-gateway
+          - auth-service
+          - data-service
+          - worker-service
+          - scheduler-service
+          - websocket-service
+          - graphql-service
+        node-version:
+          - 18.x
+          - 20.x
 
     steps:
       - name: Checkout code
@@ -29,10 +31,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: [18.x, 20.x]
+          node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
-        # Dynamically sets the directory based on the matrix value
         working-directory: ./${{ matrix.service }}
         run: npm install
 
