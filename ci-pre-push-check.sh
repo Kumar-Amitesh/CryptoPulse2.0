@@ -37,9 +37,10 @@ for service in "${VALID_SERVICES[@]}"; do
 (
     echo -e "\n${CYAN}→ Testing: $service${NC}"
 
-    docker compose run --rm --no-deps \
-      -e MONGO_URI="mongodb://localhost:27017/non_existent_db" \
-      $service npm test
+    # docker compose run --rm --no-deps \
+    #   -e MONGO_URI="mongodb://localhost:27017/non_existent_db" \
+    #   $service npm test
+    cd "$service" && npm test
 
     if [ $? -ne 0 ]; then
         echo -e "${RED}❌ FAILED: $service${NC}"
