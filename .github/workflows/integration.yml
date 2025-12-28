@@ -1,0 +1,41 @@
+name: Microservices CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Matrix strategy runs a separate instance of the job for each service
+      matrix:
+        service: [
+          "api-gateway", 
+          "auth-service", 
+          "data-service", 
+          "worker-service", 
+          "scheduler-service", 
+          "websocket-service", 
+          "graphql-service"
+        ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: [18.x, 20.x]
+
+      - name: Install dependencies
+        # Dynamically sets the directory based on the matrix value
+        working-directory: ./${{ matrix.service }}
+        run: npm install
+
+      - name: Run tests
+        working-directory: ./${{ matrix.service }}
+        run: npm test
