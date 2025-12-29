@@ -1,4 +1,5 @@
 import { createLogger, format, transports } from 'winston';
+import LokiTransport from 'winston-loki';
 
 // log format
 const customLogFormat = format.printf(({level, message, timestamp}) => {
@@ -39,6 +40,11 @@ const logger = createLogger({
             )
         }),
         new transports.File({filename: '../logs/combined.log',}),
+        new LokiTransport({
+            labels: { app: 'api-gateway' },
+            host: `http://${process.env.IP}:3100`,
+            onConnectionError: (err) => console.error(err),
+        })
     ]
 })
 

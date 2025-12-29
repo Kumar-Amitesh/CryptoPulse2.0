@@ -13,6 +13,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import cacheMiddleware from './middleware/cache.middleware.js';
 import morgan from 'morgan';
 import mongoose from 'mongoose';
+import * as prom from 'prom-client';
 
 dotenv.config({
     path:'../../.env' 
@@ -44,6 +45,22 @@ app.use((req, res, next) => {
   next();
 });
 
+// Initialize Prometheus metrics collection
+prom.collectDefaultMetrics({ prefix: 'api_gateway_' });
+
+const reqResTime = new prom.Histogram({
+    name: 'api_gateway_request_response_time_seconds',
+    help: 'Histogram of request response times in seconds',
+    labelNames: ['method', 'route', 'status_code'],
+    buckets: [1, 50, 100, 200, 400, 500, 1000, 2000]
+});
+
+const reqCounter = new prom.Counter({
+    name: 'api_gateway_requests_total',
+    help: 'Total number of requests received',
+    labelNames: ['method', 'route', 'status_code']
+});
+
 // Morgan setup: include req-id token and pipe to logger
 morgan.token('req-id', (req) => req.id || '-');
 morgan.token('remote-addr', (req) => req.ip || req.connection?.remoteAddress || '-');
@@ -69,6 +86,21 @@ app.use((req, res, next) => {
   // capture end of response
   res.on("finish", () => {
     const duration = Date.now() - start;
+
+    // Increment request counter metric
+    reqCounter.labels({
+      method: req.method,
+      route: req.originalUrl || req.url,
+      status_code: res.statusCode,
+    }).inc();
+    
+    // Record response time metric
+    reqResTime.labels({
+      method: req.method,
+      route: req.originalUrl || req.url,
+      status_code: res.statusCode,
+    }).observe(duration / 1000);
+
     const entry = {
       reqId: req.id,
       method: req.method,
@@ -104,6 +136,7 @@ const generalLimiter = rateLimit({
     skip: (req) => {
         // Skip rate limiting for health check endpoint
         if (req.path === '/health') return true;
+        if(req.path === '/metrics') return true;
         return false;
     }
 });
@@ -281,6 +314,17 @@ app.get('/health', async(req, res) => {
         return res.status(503).json({ status: 'DOWN', error: err.message });
     }
         
+});
+
+app.get('/metrics', async (req, res) => {
+    try {
+        res.set('Content-Type', prom.register.contentType);
+        const metrics = await prom.register.metrics();
+        res.send(metrics);
+    } catch (err) {
+        logger.error('Metrics endpoint error:', err);
+        res.status(500).end();
+    }
 });
 
 
